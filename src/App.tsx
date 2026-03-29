@@ -543,6 +543,8 @@ export default function App({ onLogout }: AppProps) {
   const activeChatPaneRef = useRef<HTMLDivElement | null>(null);
   const activeToolPaneRef = useRef<HTMLDivElement | null>(null);
   const chatToolRegionRef = useRef<HTMLDivElement | null>(null);
+  const toolDragFrameRef = useRef<number | null>(null);
+  const toolDragPendingWidthRef = useRef<number | null>(null);
 
   // Gateway restart
   const {
@@ -1485,12 +1487,25 @@ export default function App({ onLogout }: AppProps) {
                     const startX = event.clientX;
                     const startWidth = toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2));
                     const onMove = (moveEvent: MouseEvent) => {
-                      const nextWidth = startWidth - (moveEvent.clientX - startX);
-                      console.debug('[tool-drag]', { startX, currentX: moveEvent.clientX, startWidth, nextWidth });
-                      setToolPanelManualWidth(true);
-                      setToolPanelWidth(nextWidth);
+                      toolDragPendingWidthRef.current = startWidth - (moveEvent.clientX - startX);
+                      if (toolDragFrameRef.current !== null) return;
+                      toolDragFrameRef.current = window.requestAnimationFrame(() => {
+                        toolDragFrameRef.current = null;
+                        if (toolDragPendingWidthRef.current === null) return;
+                        setToolPanelManualWidth(true);
+                        setToolPanelWidth(toolDragPendingWidthRef.current);
+                      });
                     };
                     const onUp = () => {
+                      if (toolDragFrameRef.current !== null) {
+                        window.cancelAnimationFrame(toolDragFrameRef.current);
+                        toolDragFrameRef.current = null;
+                      }
+                      if (toolDragPendingWidthRef.current !== null) {
+                        setToolPanelManualWidth(true);
+                        setToolPanelWidth(toolDragPendingWidthRef.current);
+                        toolDragPendingWidthRef.current = null;
+                      }
                       window.removeEventListener('mousemove', onMove);
                       window.removeEventListener('mouseup', onUp);
                       document.body.style.cursor = '';
