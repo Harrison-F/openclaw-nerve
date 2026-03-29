@@ -320,6 +320,7 @@ export default function App({ onLogout }: AppProps) {
 
   const setToolPanelWidth = useCallback((nextWidth: number) => {
     const clamped = Math.max(240, Math.min(1600, Math.round(nextWidth)));
+    console.debug('[setToolPanelWidth]', { nextWidth, clamped });
     setToolPanelWidthState(clamped);
     try {
       localStorage.setItem(TOOL_PANEL_WIDTH_STORAGE_KEY, String(clamped));
@@ -1486,7 +1487,10 @@ export default function App({ onLogout }: AppProps) {
                     const startX = event.clientX;
                     const startWidth = toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2));
                     const onMove = (moveEvent: MouseEvent) => {
-                      handleSetToolPanelWidthManual(startWidth - (moveEvent.clientX - startX));
+                      const nextWidth = startWidth - (moveEvent.clientX - startX);
+                      console.debug('[tool-drag]', { startX, currentX: moveEvent.clientX, startWidth, nextWidth });
+                      setToolPanelManualWidth(true);
+                      setToolPanelWidth(nextWidth);
                     };
                     const onUp = () => {
                       window.removeEventListener('mousemove', onMove);
