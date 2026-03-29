@@ -42,6 +42,7 @@ interface MessageBubbleProps {
   firstMessageTime?: Date | null;
   searchQuery?: string;
   isCurrentMatch?: boolean;
+  isArrivalTarget?: boolean;
   agentName?: string;
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
 }
@@ -72,7 +73,7 @@ function RoleBadge({ role, agentName = 'Agent' }: { role: string; agentName?: st
   return <span className="cockpit-badge">System</span>;
 }
 
-function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, agentName, onOpenWorkspacePath }: MessageBubbleProps) {
+function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memoryKey, onToggleCollapse, onToggleMemory, firstMessageTime, searchQuery, isCurrentMatch, isArrivalTarget, agentName, onOpenWorkspacePath }: MessageBubbleProps) {
   const isUser = msg.role === 'user';
   const isAssistant = msg.role === 'assistant';
   const isSystem = msg.role === 'system' || msg.role === 'event';
@@ -147,8 +148,12 @@ function MessageBubbleInner({ msg, index, isCollapsed, isMemoryCollapsed, memory
 
   const memoryCollapsedKey = memoryKey ?? `mem-${msg.msgId || msg.tempId || index}`;
 
-  // Visual indicator for current search match
-  const matchClass = isCurrentMatch ? 'ring-2 ring-primary/60 ring-offset-1 ring-offset-background' : '';
+  // Visual indicator for current search match / arrival target
+  const matchClass = isArrivalTarget
+    ? 'ring-2 ring-primary ring-offset-2 ring-offset-background bg-primary/[0.08] shadow-[0_0_0_1px_rgba(232,168,56,0.24),0_0_28px_rgba(232,168,56,0.28)] animate-pulse'
+    : isCurrentMatch
+      ? 'ring-2 ring-primary/60 ring-offset-1 ring-offset-background'
+      : '';
   
   // Pending/failed state classes for optimistic updates
   const pendingClass = msg.pending ? 'msg-pending' : '';
@@ -356,6 +361,7 @@ export const MessageBubble = memo(MessageBubbleInner, (prev, next) => {
   // Search highlighting
   if (prev.searchQuery !== next.searchQuery) return false;
   if (prev.isCurrentMatch !== next.isCurrentMatch) return false;
+  if (prev.isArrivalTarget !== next.isArrivalTarget) return false;
   
   // Content changes (for streaming updates)
   if (prev.msg.rawText !== next.msg.rawText) return false;

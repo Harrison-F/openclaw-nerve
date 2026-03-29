@@ -93,6 +93,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const [collapsed, setCollapsed] = useState<Record<string | number, boolean>>({});
   const [unreadCount, setUnreadCount] = useState(0);
   const [processingTime, setProcessingTime] = useState(0);
+  const [arrivalHighlightRequestId, setArrivalHighlightRequestId] = useState<number | null>(null);
   const processingStart = useRef<number | null>(null);
   const prevMessageCount = useRef(0);
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -177,6 +178,11 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     if (!searchTarget) return;
     if (!messages.length) return;
     search.openTarget(searchTarget.target);
+    setArrivalHighlightRequestId(searchTarget.requestId);
+    const timer = window.setTimeout(() => {
+      setArrivalHighlightRequestId((prev) => (prev === searchTarget.requestId ? null : prev));
+    }, 1800);
+    return () => window.clearTimeout(timer);
   }, [messages, search, searchTarget]);
 
   const scrollToBottom = useCallback(() => {
@@ -314,6 +320,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
           const memoryKey = `mem-${collapseKey}`;
           const isMemoryCollapsed = collapsed[memoryKey] ?? true;
           const isCurrentMatch = search.currentMatch?.messageIndex === i;
+          const isArrivalTarget = Boolean(arrivalHighlightRequestId && isCurrentMatch);
           const stableKey = msg.msgId || msg.tempId || `${msg.role}-${msg.timestamp.getTime()}-${i}`;
 
           if (isTool) {
@@ -365,6 +372,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
                 firstMessageTime={firstMessageTime}
                 searchQuery={search.query}
                 isCurrentMatch={isCurrentMatch}
+                isArrivalTarget={isArrivalTarget}
                 agentName={agentName}
                 onOpenWorkspacePath={onOpenWorkspacePath}
               />

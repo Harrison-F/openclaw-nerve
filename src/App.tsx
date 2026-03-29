@@ -876,7 +876,6 @@ export default function App({ onLogout }: AppProps) {
             unreadSessions={unreadSessions}
             onSelect={onSelect}
             onSelectSearchResult={handleSelectChatSearchResult}
-            onRefresh={refreshSessions}
             onDelete={deleteSession}
             onSpawn={handleSpawnSession}
             onRename={renameSession}
@@ -901,7 +900,6 @@ export default function App({ onLogout }: AppProps) {
           unreadSessions={unreadSessions}
           onSelect={handleSessionChange}
           onSelectSearchResult={handleSelectChatSearchResult}
-          onRefresh={refreshSessions}
           onDelete={deleteSession}
           onSpawn={handleSpawnSession}
           onRename={renameSession}

@@ -18,7 +18,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Plus, RefreshCw, Search, X } from 'lucide-react';
+import { AlertTriangle, Plus, Search, X } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 
 interface SessionListProps {
@@ -30,7 +30,6 @@ interface SessionListProps {
   unreadSessions?: Record<string, boolean>;
   onSelect: (key: string) => void;
   onSelectSearchResult?: (sessionKey: string, result: SessionSearchResult, query: string) => void;
-  onRefresh: () => void;
   onDelete?: (sessionKey: string) => Promise<void>;
   onSpawn?: (opts: SpawnSessionOpts) => Promise<void | boolean>;
   onRename?: (sessionKey: string, label: string) => Promise<void>;
@@ -68,6 +67,31 @@ function normalizeSearchValue(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
+function renderHighlightedSnippet(snippet: string, query: string): Array<{ text: string; match: boolean }> {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) return [{ text: snippet, match: false }];
+
+  const sourceLower = snippet.toLocaleLowerCase();
+  const queryLower = normalizedQuery.toLocaleLowerCase();
+  const parts: Array<{ text: string; match: boolean }> = [];
+  let cursor = 0;
+
+  while (cursor < snippet.length) {
+    const index = sourceLower.indexOf(queryLower, cursor);
+    if (index === -1) {
+      parts.push({ text: snippet.slice(cursor), match: false });
+      break;
+    }
+    if (index > cursor) {
+      parts.push({ text: snippet.slice(cursor, index), match: false });
+    }
+    parts.push({ text: snippet.slice(index, index + normalizedQuery.length), match: true });
+    cursor = index + normalizedQuery.length;
+  }
+
+  return parts.filter((part) => part.text.length > 0);
+}
+
 function buildSearchSnippet(messages: ChatMessage[], query: string): { snippet: string; targetMessageText: string } | null {
   const normalizedQuery = normalizeSearchValue(query);
   if (!normalizedQuery) return null;
@@ -100,7 +124,7 @@ function buildSearchSnippet(messages: ChatMessage[], query: string): { snippet: 
 }
 
 /** Sidebar list of agent sessions with tree structure and context menus. */
-export function SessionList({ displayMode = 'session', sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onSelectSearchResult, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
+export function SessionList({ displayMode = 'session', sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onSelectSearchResult, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
   const { connectionState, rpc } = useGateway();
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -349,15 +373,6 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
               <Plus size={16} />
             </button>
           )}
-          <button
-            type="button"
-            onClick={onRefresh}
-            aria-label="Refresh sessions"
-            title="Refresh sessions"
-            className="shell-icon-button size-10 px-0"
-          >
-            <RefreshCw size={16} aria-hidden="true" className={isLoading ? 'animate-spin' : undefined} />
-          </button>
         </div>
       </div>
       {displayMode === 'chat' && searchOpen && (
@@ -451,7 +466,19 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
                   </span>
                 </div>
                 {searchResult?.snippet && (
-                  <p className="mt-1 line-clamp-2 text-[0.667rem] text-muted-foreground">{searchResult.snippet}</p>
+                  <p className="mt-1 line-clamp-2 text-[0.68rem] text-foreground/80">
+                    {renderHighlightedSnippet(searchResult.snippet, searchQuery).map((part, index) => (
+                      part.match ? (
+                        <mark key={index} className="rounded-sm bg-primary/20 px-0.5 text-primary">
+                          {part.text}
+                        </mark>
+                      ) : (
+                        <span key={index} className="text-muted-foreground">
+                          {part.text}
+                        </span>
+                      )
+                    ))}
+                  </p>
                 )}
               </button>
             );
