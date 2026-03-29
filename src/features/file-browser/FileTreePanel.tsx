@@ -680,8 +680,8 @@ export function FileTreePanel({
             type="button"
             onClick={toggleCollapsed}
             className="group flex flex-1 min-h-0 items-center justify-center text-[0.58rem] font-mono font-semibold uppercase tracking-[0.28em] text-muted-foreground transition-colors hover:text-foreground"
-            title="Open file explorer"
-            aria-label="Open file explorer"
+            title="Expand file explorer rail"
+            aria-label="Expand file explorer rail"
           >
             <span
               className="pointer-events-none whitespace-nowrap [writing-mode:vertical-rl] rotate-180"

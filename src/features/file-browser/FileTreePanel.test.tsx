@@ -1182,6 +1182,24 @@ describe('FileTreePanel', () => {
       expect(screen.getByText('package.json')).toBeInTheDocument();
     });
 
+    it('uses distinct accessible names for the collapsed reopen controls', () => {
+      mockUseFileTree.mockReturnValue(defaultMockHook);
+
+      render(
+        <FileTreePanel
+          onOpenFile={mockOnOpenFile}
+          onRemapOpenPaths={mockOnRemapOpenPaths}
+          onCloseOpenPaths={mockOnCloseOpenPaths}
+          collapsed={true}
+          onCollapseChange={mockOnCollapseChange}
+          isCompactLayout={false}
+        />
+      );
+
+      expect(screen.getByRole('button', { name: 'Open file explorer' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Expand file explorer rail' })).toBeInTheDocument();
+    });
+
     it('calls onCollapseChange when the close button is clicked', () => {
       mockUseFileTree.mockReturnValue(defaultMockHook);
 
