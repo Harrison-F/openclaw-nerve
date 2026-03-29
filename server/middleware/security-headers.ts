@@ -75,7 +75,19 @@ export const securityHeaders: MiddlewareHandler = async (c, next) => {
 
   // Content Security Policy - defense in depth against XSS
   if (isEmbeddedToolRoute) {
-    const toolCsp = getCspDirectives().replace(/frame-ancestors\s+'none'/, "frame-ancestors 'self'");
+    const toolCsp = [
+      "default-src 'self' http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:* https://*.ts.net:* https://100.102.143.17:*",
+      "script-src 'self' 'unsafe-inline' https://unpkg.com",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
+      "font-src 'self' https://fonts.gstatic.com",
+      "connect-src 'self' http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:* https://*.ts.net:* https://100.102.143.17:* https://mempool.space",
+      "img-src 'self' data: blob: https://tile.openstreetmap.org https://*.tile.openstreetmap.org",
+      "media-src 'self' blob:",
+      "frame-src 'self'",
+      "frame-ancestors 'self'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ');
     c.header('Content-Security-Policy', toolCsp);
   } else {
     c.header('Content-Security-Policy', getCspDirectives());
