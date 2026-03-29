@@ -1,5 +1,8 @@
-import { memo, useState, useCallback, useRef, useEffect } from 'react';
-import { Filter, Plus, X, Inbox } from 'lucide-react';
+import { memo, useState, useCallback, useRef, useEffect, type CSSProperties, type MouseEvent as ReactMouseEvent, type RefObject } from 'react';
+import { Filter, GripVertical, Plus, X, Inbox } from 'lucide-react';
+import { DndContext, DragOverlay, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, arrayMove, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Button } from '@/components/ui/button';
 import type { KanbanBoard, TaskStatus, TaskPriority } from './types';
 import type { KanbanFilters } from './hooks/useKanban';
@@ -53,6 +56,8 @@ interface KanbanHeaderProps {
   onSelectBoard: (boardId: string) => void;
   onCreateBoard: () => void;
   onRenameBoard: (boardId: string, name: string) => Promise<void> | void;
+  onReorderBoards: (boardIds: string[]) => Promise<void> | void;
+  onRequestDeleteBoard: (board: KanbanBoard) => void;
   filters: KanbanFilters;
   onFiltersChange: (filters: KanbanFilters) => void;
   statusCounts: Record<TaskStatus, number>;
@@ -63,12 +68,86 @@ interface KanbanHeaderProps {
   onRejectProposal?: (id: string) => void;
 }
 
+type BoardTabProps = {
+  board: KanbanBoard;
+  active: boolean;
+  renaming: boolean;
+  renameValue: string;
+  renameInputRef: RefObject<HTMLInputElement | null>;
+  onSelectBoard: (boardId: string) => void;
+  onStartRenamingBoard: (board: KanbanBoard) => void;
+  onRenameValueChange: (value: string) => void;
+  onCommitRename: () => void;
+  onCancelRename: () => void;
+  onContextMenu: (event: ReactMouseEvent, board: KanbanBoard) => void;
+};
+
+function BoardTab({
+  board,
+  active,
+  renaming,
+  renameValue,
+  renameInputRef,
+  onSelectBoard,
+  onStartRenamingBoard,
+  onRenameValueChange,
+  onCommitRename,
+  onCancelRename,
+  onContextMenu,
+}: BoardTabProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: board.id });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  if (renaming) {
+    return (
+      <input
+        ref={renameInputRef}
+        value={renameValue}
+        onChange={(e) => onRenameValueChange(e.target.value)}
+        onBlur={() => { void onCommitRename(); }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); void onCommitRename(); }
+          if (e.key === 'Escape') { onCancelRename(); }
+        }}
+        className="h-9 min-w-[120px] rounded-full border border-primary/40 bg-primary/10 px-3 text-[0.733rem] font-semibold text-foreground outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      style={style}
+      onClick={() => onSelectBoard(board.id)}
+      onDoubleClick={() => onStartRenamingBoard(board)}
+      onContextMenu={(event) => onContextMenu(event, board)}
+      className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-[0.733rem] font-semibold transition-colors ${active ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/70 bg-background/40 text-muted-foreground hover:text-foreground'} ${isDragging ? 'opacity-60' : ''}`}
+    >
+      <span
+        {...attributes}
+        {...listeners}
+        className="cursor-grab touch-none text-muted-foreground/80 hover:text-foreground active:cursor-grabbing"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <GripVertical size={12} />
+      </span>
+      <span>{board.name}</span>
+    </button>
+  );
+}
+
 export const KanbanHeader = memo(function KanbanHeader({
   boards,
   activeBoardId,
   onSelectBoard,
   onCreateBoard,
   onRenameBoard,
+  onReorderBoards,
+  onRequestDeleteBoard,
   filters,
   onFiltersChange,
   statusCounts,
@@ -83,25 +162,32 @@ export const KanbanHeader = memo(function KanbanHeader({
   const [searchValue, setSearchValue] = useState(filters.q);
   const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
+  const [draggingBoardId, setDraggingBoardId] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; board: KanbanBoard } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const filtersRef = useRef(filters);
   const inboxRef = useRef<HTMLDivElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
 
   /* Keep filtersRef in sync (avoids stale closures in debounced search) */
   useEffect(() => { filtersRef.current = filters; });
 
-  /* Close inbox popover when clicking outside */
+  /* Close inbox popover / board context menu when clicking outside */
   useEffect(() => {
-    if (!showInbox) return;
+    if (!showInbox && !contextMenu) return;
     const handler = (e: MouseEvent) => {
-      if (inboxRef.current && !inboxRef.current.contains(e.target as Node)) {
+      if (showInbox && inboxRef.current && !inboxRef.current.contains(e.target as Node)) {
         setShowInbox(false);
+      }
+      if (contextMenu && contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
       }
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
-  }, [showInbox]);
+  }, [contextMenu, showInbox]);
 
   /* Debounced search — reads filtersRef to avoid overwriting concurrent filter changes */
   const handleSearchChange = useCallback((value: string) => {
@@ -136,6 +222,7 @@ export const KanbanHeader = memo(function KanbanHeader({
   }, [onFiltersChange]);
 
   const activeBoard = boards.find((board) => board.id === activeBoardId) ?? boards[0] ?? null;
+  const draggingBoard = boards.find((board) => board.id === draggingBoardId) ?? null;
 
   const startRenamingBoard = useCallback((board: KanbanBoard | null) => {
     if (!board) return;
@@ -153,6 +240,27 @@ export const KanbanHeader = memo(function KanbanHeader({
     setRenamingBoardId(null);
     setRenameValue('');
   }, [boards, onRenameBoard, renameValue, renamingBoardId]);
+
+  const cancelBoardRename = useCallback(() => {
+    setRenamingBoardId(null);
+    setRenameValue('');
+  }, []);
+
+  const handleBoardContextMenu = useCallback((event: React.MouseEvent, board: KanbanBoard) => {
+    event.preventDefault();
+    setContextMenu({ x: event.clientX, y: event.clientY, board });
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setDraggingBoardId(null);
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = boards.findIndex((board) => board.id === active.id);
+    const newIndex = boards.findIndex((board) => board.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(boards, oldIndex, newIndex).map((board) => board.id);
+    void onReorderBoards(reordered);
+  }, [boards, onReorderBoards]);
 
   const hasActiveFilters = filters.q || filters.priority.length > 0 || filters.assignee || filters.labels.length > 0;
 
@@ -195,37 +303,46 @@ export const KanbanHeader = memo(function KanbanHeader({
               <StatChip label="Done" count={statusCounts.done} status="done" />
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1">
-            {boards.map((board) => (
-              renamingBoardId === board.id ? (
-                <input
-                  key={board.id}
-                  value={renameValue}
-                  onChange={(e) => setRenameValue(e.target.value)}
-                  onBlur={() => { void commitBoardRename(); }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); void commitBoardRename(); }
-                    if (e.key === 'Escape') { setRenamingBoardId(null); setRenameValue(''); }
-                  }}
-                  className="h-9 min-w-[120px] rounded-full border border-primary/40 bg-primary/10 px-3 text-[0.733rem] font-semibold text-foreground outline-none"
-                />
-              ) : (
-                <button
-                  key={board.id}
-                  type="button"
-                  onClick={() => onSelectBoard(board.id)}
-                  onDoubleClick={() => startRenamingBoard(board)}
-                  className={`h-9 rounded-full border px-3 text-[0.733rem] font-semibold transition-colors ${board.id === activeBoardId ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/70 bg-background/40 text-muted-foreground hover:text-foreground'}`}
-                >
-                  {board.name}
-                </button>
-              )
-            ))}
-            <Button variant="outline" size="sm" onClick={onCreateBoard} className="h-9 rounded-full px-3 text-[0.733rem]">
-              <Plus size={14} />
-              Board
-            </Button>
-          </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={(event) => setDraggingBoardId(String(event.active.id))}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setDraggingBoardId(null)}
+          >
+            <SortableContext items={boards.map((board) => board.id)} strategy={horizontalListSortingStrategy}>
+              <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1">
+                {boards.map((board) => (
+                  <BoardTab
+                    key={board.id}
+                    board={board}
+                    active={board.id === activeBoardId}
+                    renaming={renamingBoardId === board.id}
+                    renameValue={renameValue}
+                    renameInputRef={renameInputRef}
+                    onSelectBoard={onSelectBoard}
+                    onStartRenamingBoard={startRenamingBoard}
+                    onRenameValueChange={setRenameValue}
+                    onCommitRename={commitBoardRename}
+                    onCancelRename={cancelBoardRename}
+                    onContextMenu={handleBoardContextMenu}
+                  />
+                ))}
+                <Button variant="outline" size="sm" onClick={onCreateBoard} className="h-9 rounded-full px-3 text-[0.733rem]">
+                  <Plus size={14} />
+                  Board
+                </Button>
+              </div>
+            </SortableContext>
+            <DragOverlay>
+              {draggingBoard ? (
+                <div className="inline-flex h-9 items-center gap-2 rounded-full border border-primary/40 bg-card/95 px-3 text-[0.733rem] font-semibold text-foreground shadow-[0_16px_34px_rgba(0,0,0,0.22)]">
+                  <GripVertical size={12} className="text-muted-foreground" />
+                  {draggingBoard.name}
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </div>
 
         <div className="flex-1" />
@@ -307,6 +424,25 @@ export const KanbanHeader = memo(function KanbanHeader({
           </Button>
         </div>
       </div>
+
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 min-w-[180px] rounded-2xl border border-border/70 bg-card/95 p-1.5 shadow-[0_22px_60px_rgba(0,0,0,0.34)] backdrop-blur-xl"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setContextMenu(null);
+              onRequestDeleteBoard(contextMenu.board);
+            }}
+            className="flex w-full items-center rounded-xl px-3 py-2 text-left text-sm text-destructive transition-colors hover:bg-destructive/10"
+          >
+            Delete board
+          </button>
+        </div>
+      )}
 
       {/* Row 2: Filter controls (collapsible) */}
       {showFilters && (

@@ -158,6 +158,33 @@ export function useKanban() {
     return board;
   }, [fetchBoards]);
 
+  const reorderBoards = useCallback(async (boardIds: string[]): Promise<KanbanBoard[]> => {
+    const res = await fetch('/api/kanban/boards/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ boardIds }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.details || body.error || `HTTP ${res.status}`);
+    }
+    const data: BoardsResponse = await res.json();
+    setBoards(data.boards);
+    return data.boards;
+  }, []);
+
+  const deleteBoard = useCallback(async (id: string): Promise<void> => {
+    const res = await fetch(`/api/kanban/boards/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.details || body.error || `HTTP ${res.status}`);
+    }
+    await fetchBoards();
+    await fetchTasks(undefined, { silent: true });
+  }, [fetchBoards, fetchTasks]);
+
   /* ── Mutations ── */
   const createTask = useCallback(async (payload: CreateTaskPayload): Promise<KanbanTask> => {
     const res = await fetch('/api/kanban/tasks', {
@@ -335,6 +362,8 @@ export function useKanban() {
     setActiveBoardId,
     createBoard,
     renameBoard,
+    reorderBoards,
+    deleteBoard,
     total,
     loading,
     error,

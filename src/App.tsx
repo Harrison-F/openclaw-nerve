@@ -15,7 +15,7 @@ import {
   lazy,
   Suspense,
 } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCw, PlugZap, Mic, Loader2, Square, SidebarOpen } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, RotateCw, PlugZap, Mic, Loader2, Square, SidebarOpen, PanelLeftClose } from 'lucide-react';
 import type { SearchMatchTarget } from '@/features/chat/useMessageSearch';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
@@ -34,7 +34,6 @@ import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
 import { invalidatePhrasesCache, useVoiceInput } from '@/features/voice/useVoiceInput';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { ViewMode } from '@/features/command-palette/commands';
-import { ResizablePanels } from '@/components/ResizablePanels';
 import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { createCommands } from '@/features/command-palette/commands';
@@ -69,7 +68,6 @@ interface PendingWorkspaceSwitch {
 const CHAT_VISIBILITY_STORAGE_KEY = 'nerve-visible-chat-session-keys-v1';
 const CHAT_HISTORY_WIDTH_MIGRATION_KEY = 'nerve-chat-history-width-migrated-v2';
 const DEFAULT_CHAT_HISTORY_PANEL_RATIO = 50;
-const DEFAULT_CHAT_HISTORY_WIDTH_PX = 220;
 const TOOL_PANEL_WIDTH_STORAGE_KEY = 'nerve-tool-panel-width-v3';
 const TOOL_PANEL_CHAT_BASELINE_STORAGE_KEY = 'nerve-tool-panel-chat-baseline-v1';
 const TOOL_PANEL_COLLAPSED_STORAGE_KEY = 'nerve-tool-panel-collapsed';
@@ -121,7 +119,7 @@ export default function App({ onLogout }: AppProps) {
     sttProvider, setSttProvider, sttInputMode, setSttInputMode, sttModel, setSttModel,
     wakeWordEnabled, handleToggleWakeWord, handleWakeWordState,
     liveTranscriptionPreview, toggleLiveTranscriptionPreview,
-    panelRatio, setPanelRatio,
+    setPanelRatio,
     eventsVisible, logVisible,
     toggleEvents, toggleLog, toggleTelemetry,
     setTheme, setFont,
@@ -344,11 +342,6 @@ export default function App({ onLogout }: AppProps) {
     setToolPanelCollapsed(prev => !prev);
   }, [setToolPanelCollapsed]);
 
-  const handleSetToolPanelWidthManual = useCallback((nextWidth: number) => {
-    setToolPanelManualWidth(true);
-    setToolPanelWidth(nextWidth);
-  }, [setToolPanelWidth]);
-
   const setChatHistoryCollapsed = useCallback((nextCollapsed: boolean | ((prev: boolean) => boolean)) => {
     setChatHistoryCollapsedState(prevCollapsed => {
       const resolved = typeof nextCollapsed === 'function' ? nextCollapsed(prevCollapsed) : nextCollapsed;
@@ -479,7 +472,7 @@ export default function App({ onLogout }: AppProps) {
   const [booted, setBooted] = useState(false);
   const [logGlow, setLogGlow] = useState(false);
   const [isMobileTopBarHidden, setIsMobileTopBarHidden] = useState(false);
-  const [desktopRightPanelWidth, setDesktopRightPanelWidth] = useState<number | null>(null);
+  const [desktopRightPanelWidth] = useState<number | null>(null);
   const [chatHistoryCollapsed, setChatHistoryCollapsedState] = useState<boolean>(() => {
     try {
       return localStorage.getItem(CHAT_HISTORY_COLLAPSED_STORAGE_KEY) === 'true';
@@ -543,7 +536,7 @@ export default function App({ onLogout }: AppProps) {
     baselineWidth: null,
   });
   const [chatToolRegionWidth, setChatToolRegionWidth] = useState<number | null>(null);
-  const [toolPanelManualWidth, setToolPanelManualWidth] = useState(false);
+  const [toolPanelManualWidth] = useState(false);
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
   const activeChatPaneRef = useRef<HTMLDivElement | null>(null);

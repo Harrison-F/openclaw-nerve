@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import type { KanbanTask } from './types';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import type { KanbanBoard as KanbanBoardType, KanbanTask } from './types';
 import { useKanban } from './hooks/useKanban';
 import { useProposals } from './hooks/useProposals';
 import { KanbanHeader } from './KanbanHeader';
@@ -27,6 +28,8 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
     setActiveBoardId,
     createBoard,
     renameBoard,
+    reorderBoards,
+    deleteBoard,
     loading,
     error,
     filters,
@@ -53,6 +56,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<KanbanTask | null>(null);
+  const [pendingBoardDelete, setPendingBoardDelete] = useState<KanbanBoardType | null>(null);
   const consumedRef = useRef<string | null>(null);
 
   // Auto-open drawer for initialTaskId
@@ -99,6 +103,20 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
     setCreateOpen(true);
   }, []);
 
+  const handleReorderBoards = useCallback(async (boardIds: string[]) => {
+    await reorderBoards(boardIds);
+  }, [reorderBoards]);
+
+  const handleRequestDeleteBoard = useCallback((board: KanbanBoardType) => {
+    setPendingBoardDelete(board);
+  }, []);
+
+  const handleConfirmDeleteBoard = useCallback(async () => {
+    if (!pendingBoardDelete) return;
+    await deleteBoard(pendingBoardDelete.id);
+    setPendingBoardDelete(null);
+  }, [deleteBoard, pendingBoardDelete]);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-background">
       {/* Header with search, filters, stats, + New Task */}
@@ -108,6 +126,8 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
         onSelectBoard={setActiveBoardId}
         onCreateBoard={async () => { await createBoard(); }}
         onRenameBoard={async (boardId, name) => { await renameBoard(boardId, name); }}
+        onReorderBoards={handleReorderBoards}
+        onRequestDeleteBoard={handleRequestDeleteBoard}
         filters={filters}
         onFiltersChange={setFilters}
         statusCounts={statusCounts}
@@ -151,6 +171,19 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
         onApprove={approveTask}
         onReject={rejectTask}
         onAbort={abortTask}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingBoardDelete)}
+        title="Delete board"
+        message={pendingBoardDelete
+          ? `Delete the board “${pendingBoardDelete.name}”? Its tasks will also be deleted. This can’t be undone.`
+          : ''}
+        confirmLabel="Delete board"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={() => { void handleConfirmDeleteBoard(); }}
+        onCancel={() => setPendingBoardDelete(null)}
       />
     </div>
   );
