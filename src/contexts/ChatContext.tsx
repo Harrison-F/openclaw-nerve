@@ -84,6 +84,7 @@ interface ChatContextValue {
   activityLog: ActivityLogEntry[];
   currentToolDescription: string | null;
   handleSend: (text: string, images?: ImageAttachment[]) => Promise<void>;
+  handleSendToSession: (sessionKey: string, text: string, images?: ImageAttachment[]) => Promise<void>;
   handleAbort: () => Promise<void>;
   handleReset: () => void;
   loadHistory: (session?: string) => Promise<void>;
@@ -557,43 +558,52 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   ]);
 
   // ─── Send message ─────────────────────────────────────────────────────────
-  const handleSend = useCallback(async (text: string, images?: ImageAttachment[]) => {
-    ttsHook.trackVoiceMessage(text);
+  const sendToSession = useCallback(async (sessionKey: string, text: string, images?: ImageAttachment[]) => {
+    const isCurrentTarget = sessionKey === currentSessionRef.current;
+
+    if (isCurrentTarget) {
+      ttsHook.trackVoiceMessage(text);
+    }
 
     const { msg: userMsg, tempId } = buildUserMessage({ text, images });
 
-    recoveryHook.incrementGeneration();
+    if (isCurrentTarget) {
+      recoveryHook.incrementGeneration();
 
-    // Optimistic insert (functional updater to avoid read-then-write race)
-    msgHook.setAllMessages(prev => [...prev, userMsg]);
-    msgHook.setMessages((prev: ChatMsg[]) => [...prev, userMsg]);
-    setIsGenerating(true);
-    streamHook.setStream((prev: ChatStreamState) => ({ ...prev, html: '', runId: undefined }));
-    streamHook.setProcessingStage('thinking');
+      // Optimistic insert (functional updater to avoid read-then-write race)
+      msgHook.setAllMessages(prev => [...prev, userMsg]);
+      msgHook.setMessages((prev: ChatMsg[]) => [...prev, userMsg]);
+      setIsGenerating(true);
+      streamHook.setStream((prev: ChatStreamState) => ({ ...prev, html: '', runId: undefined }));
+      streamHook.setProcessingStage('thinking');
+    }
 
     const idempotencyKey = crypto.randomUUID ? crypto.randomUUID() : 'ik-' + Date.now();
     try {
       const ack = await sendChatMessage({
         rpc,
-        sessionKey: currentSessionRef.current,
+        sessionKey,
         text,
         images,
         idempotencyKey,
       });
 
-      if (ack.runId) {
-        const run = getOrCreateRunState(runsRef.current, ack.runId, currentSessionRef.current);
+      if (isCurrentTarget && ack.runId) {
+        const run = getOrCreateRunState(runsRef.current, ack.runId, sessionKey);
         run.status = ack.status;
         run.finalized = false;
         activeRunIdRef.current = ack.runId;
         streamHook.startThinking(ack.runId);
       }
 
-      // Confirm the message (functional updater to avoid race after await)
-      const confirmMsg = (m: ChatMsg) => m.tempId === tempId ? { ...m, pending: false } : m;
-      msgHook.setAllMessages(prev => prev.map(confirmMsg));
-      msgHook.setMessages((prev: ChatMsg[]) => prev.map(confirmMsg));
+      if (isCurrentTarget) {
+        const confirmMsg = (m: ChatMsg) => m.tempId === tempId ? { ...m, pending: false } : m;
+        msgHook.setAllMessages(prev => prev.map(confirmMsg));
+        msgHook.setMessages((prev: ChatMsg[]) => prev.map(confirmMsg));
+      }
     } catch (e) {
+      if (!isCurrentTarget) throw e;
+
       const errMsg = e instanceof Error ? e.message : String(e);
 
       const failMsg = (m: ChatMsg) => m.tempId === tempId ? { ...m, pending: false, failed: true } : m;
@@ -612,6 +622,16 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setIsGenerating(false);
     }
   }, [rpc, msgHook, streamHook, ttsHook, recoveryHook]);
+
+  const handleSend = useCallback(async (text: string, images?: ImageAttachment[]) => {
+    if (!currentSessionRef.current) return;
+    await sendToSession(currentSessionRef.current, text, images);
+  }, [sendToSession]);
+
+  const handleSendToSession = useCallback(async (sessionKey: string, text: string, images?: ImageAttachment[]) => {
+    if (!sessionKey) return;
+    await sendToSession(sessionKey, text, images);
+  }, [sendToSession]);
 
   // ─── Abort / Reset ────────────────────────────────────────────────────────
   const handleAbort = useCallback(async () => {
@@ -667,6 +687,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     activityLog: streamHook.activityLog,
     currentToolDescription: streamHook.currentToolDescription,
     handleSend,
+    handleSendToSession,
     handleAbort,
     handleReset,
     loadHistory: msgHook.loadHistory,
@@ -684,6 +705,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     streamHook.activityLog,
     streamHook.currentToolDescription,
     handleSend,
+    handleSendToSession,
     handleAbort,
     handleReset,
     msgHook.loadHistory,

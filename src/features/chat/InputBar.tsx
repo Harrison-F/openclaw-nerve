@@ -1,12 +1,13 @@
 import { useRef, useEffect, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react';
 import { Mic, Paperclip, X, Loader2, ArrowUp } from 'lucide-react';
-import { useVoiceInput } from '@/features/voice/useVoiceInput';
+import type { VoiceState } from '@/features/voice/useVoiceInput';
 import { useTabCompletion } from '@/hooks/useTabCompletion';
 import { useInputHistory } from '@/hooks/useInputHistory';
 import { useSessionContext } from '@/contexts/SessionContext';
 import { useSettings } from '@/contexts/SettingsContext';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '@/lib/constants';
 import { getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { getSessionKey } from '@/types';
 import { compressImage } from './image-compress';
 import type { ImageAttachment } from './types';
 
@@ -16,6 +17,15 @@ interface InputBarProps {
   onWakeWordState?: (enabled: boolean, toggle: () => void) => void;
   /** Agent name for dynamic wake phrase (e.g., "Hey Helena") */
   agentName?: string;
+  voiceState: VoiceState;
+  interimTranscript: string;
+  startRecording: () => Promise<void> | void;
+  stopAndTranscribe: () => Promise<void> | void;
+  wakeWordEnabled: boolean;
+  toggleWakeWord: () => void;
+  voiceError: string | null;
+  clearVoiceError: () => void;
+  voiceOriginSessionKey?: string | null;
 }
 
 export interface InputBarHandle {
@@ -23,7 +33,20 @@ export interface InputBarHandle {
 }
 
 /** Chat input bar with file attachments, voice input, and model effort selector. */
-export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function InputBar({ onSend, isGenerating, onWakeWordState, agentName = 'Agent' }, ref) {
+export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function InputBar({
+  onSend,
+  isGenerating,
+  onWakeWordState,
+  voiceState,
+  interimTranscript,
+  startRecording,
+  stopAndTranscribe,
+  wakeWordEnabled,
+  toggleWakeWord,
+  voiceError,
+  clearVoiceError,
+  voiceOriginSessionKey = null,
+}, ref) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingImages, setPendingImages] = useState<ImageAttachment[]>([]);
@@ -37,7 +60,7 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   // Tab completion for session names
   const { sessions, currentSession, agentName: ctxAgentName } = useSessionContext();
-  const { liveTranscriptionPreview, sttInputMode, sttProvider } = useSettings();
+  const { liveTranscriptionPreview } = useSettings();
   const getSessionLabels = useMemo(() => {
     // Build a closure that returns current session labels
     const labels = sessions.map((session) => getSessionDisplayLabel(session, ctxAgentName));
@@ -65,80 +88,41 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     }
   }), []);
 
-  // Fetch current language for voice phrase matching
-  const [voiceLang, setVoiceLang] = useState('en');
-  const [voicePhrasesVersion, setVoicePhrasesVersion] = useState(0);
-
-  useEffect(() => {
-    let currentController: AbortController | null = null;
-
-    const fetchLang = () => {
-      currentController?.abort();
-      const controller = new AbortController();
-      currentController = controller;
-
-      fetch('/api/language', { signal: controller.signal })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (!controller.signal.aborted && data?.language) {
-            setVoiceLang(data.language);
-          }
-        })
-        .catch((err) => {
-          if ((err as DOMException)?.name === 'AbortError') return;
-        });
-    };
-
-    const handlePhrasesChanged = () => {
-      setVoicePhrasesVersion((v) => v + 1);
-    };
-
-    fetchLang();
-    // Listen for language changes from settings
-    window.addEventListener('nerve:language-changed', fetchLang);
-    window.addEventListener('nerve:voice-phrases-changed', handlePhrasesChanged);
-    return () => {
-      window.removeEventListener('nerve:language-changed', fetchLang);
-      window.removeEventListener('nerve:voice-phrases-changed', handlePhrasesChanged);
-      currentController?.abort();
-    };
-  }, []);
-
-  const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
-
-  const {
-    voiceState,
-    interimTranscript,
-    startRecording,
-    stopAndTranscribe,
-    discardRecording,
-    wakeWordEnabled,
-    toggleWakeWord,
-    error: voiceError,
-    clearError: clearVoiceError,
-  } = useVoiceInput((text) => {
-    if (!hasActiveSession) {
-      indicateMissingSession();
-      return;
-    }
-    const input = inputRef.current;
-    if (input) {
-      input.value = '';
-      input.style.height = 'auto';
-      input.style.fontStyle = '';
-      input.style.opacity = '';
-    }
-    onSend('[voice] ' + text);
-  }, agentName, voiceLang, voicePhrasesVersion, effectiveSttInputMode);
+  const isVoiceOwnedByCurrentSession = Boolean(
+    currentSession
+    && voiceOriginSessionKey
+    && currentSession === voiceOriginSessionKey,
+  );
+  const hasForeignVoiceSession = Boolean(
+    currentSession
+    && voiceOriginSessionKey
+    && currentSession !== voiceOriginSessionKey
+    && (voiceState === 'recording' || voiceState === 'transcribing'),
+  );
+  const voiceOriginLabel = useMemo(() => {
+    if (!voiceOriginSessionKey) return null;
+    const originSession = sessions.find((session) => getSessionKey(session) === voiceOriginSessionKey);
+    if (originSession) return getSessionDisplayLabel(originSession, ctxAgentName);
+    return voiceOriginSessionKey;
+  }, [ctxAgentName, sessions, voiceOriginSessionKey]);
 
   // Live transcription preview: write interim transcript to textarea during recording
   useEffect(() => {
     if (!inputRef.current) return;
 
-    if (!liveTranscriptionPreview) {
-      // Ensure temporary preview styling is removed when feature is disabled.
+    const shouldShowLocalVoicePreview = liveTranscriptionPreview && isVoiceOwnedByCurrentSession;
+
+    if (!shouldShowLocalVoicePreview) {
+      // Ensure temporary preview styling is removed when feature is disabled
+      // or when the active recording belongs to another chat.
+      const hadVoicePreviewStyling =
+        inputRef.current.style.fontStyle === 'italic' || inputRef.current.style.opacity === '0.5';
       inputRef.current.style.fontStyle = '';
       inputRef.current.style.opacity = '';
+      if (hadVoicePreviewStyling) {
+        inputRef.current.value = '';
+        inputRef.current.style.height = 'auto';
+      }
       return;
     }
 
@@ -159,12 +143,12 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
         inputRef.current.style.fontStyle === 'italic' || inputRef.current.style.opacity === '0.5';
       inputRef.current.style.fontStyle = '';
       inputRef.current.style.opacity = '';
-      if (voiceState === 'transcribing' || hadVoicePreviewStyling) {
+      if ((voiceState === 'transcribing' && isVoiceOwnedByCurrentSession) || hadVoicePreviewStyling) {
         inputRef.current.value = '';
         inputRef.current.style.height = 'auto';
       }
     }
-  }, [interimTranscript, liveTranscriptionPreview, voiceState]);
+  }, [interimTranscript, isVoiceOwnedByCurrentSession, liveTranscriptionPreview, voiceState]);
 
   const processFiles = useCallback((files: FileList | File[]) => {
     const imageFiles = Array.from(files).filter(f => f.type.startsWith('image/'));
@@ -269,13 +253,13 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       return;
     }
 
-    if (voiceState === 'recording') {
+    if (!hasForeignVoiceSession && voiceState === 'recording' && isVoiceOwnedByCurrentSession) {
       clearVoiceError();
       await stopAndTranscribe();
       return;
     }
 
-    if (voiceState === 'transcribing') {
+    if (!hasForeignVoiceSession && voiceState === 'transcribing' && isVoiceOwnedByCurrentSession) {
       return;
     }
 
@@ -433,17 +417,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       />
       {/* Input row */}
       <div
-        className={`flex items-end gap-1.5 border-t px-2.5 py-2.5 shrink-0 bg-card/92 focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_10px_rgba(232,168,56,0.12)] sm:gap-2 sm:px-3 sm:py-3 ${voiceState === 'recording' ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.24)]' : 'border-border/70'}`}
+        className={`flex items-end gap-1.5 border-t px-2.5 py-2.5 shrink-0 bg-card/92 focus-within:border-t-primary/40 focus-within:shadow-[0_-1px_10px_rgba(232,168,56,0.12)] sm:gap-2 sm:px-3 sm:py-3 ${voiceState === 'recording' && isVoiceOwnedByCurrentSession ? 'border-t-red-500 shadow-[0_-1px_12px_rgba(239,68,68,0.24)]' : 'border-border/70'}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {voiceState === 'recording' ? (
+        {voiceState === 'recording' && isVoiceOwnedByCurrentSession ? (
           <span className="cockpit-badge shrink-0 self-center" data-tone="danger">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             <Mic size={14} className="text-red-500" />
           </span>
-        ) : voiceState === 'transcribing' ? (
+        ) : voiceState === 'transcribing' && isVoiceOwnedByCurrentSession ? (
           <span className="cockpit-badge shrink-0 self-center" data-tone="primary">
             <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
             <Mic size={14} className="text-primary" />
@@ -486,36 +470,43 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
               indicateMissingSession();
               return;
             }
+            if (hasForeignVoiceSession) {
+              setAttachmentError(`Recording is active in ${voiceOriginLabel || 'another chat'}. Use the floating control to finish it.`);
+              return;
+            }
             clearVoiceError();
-            if (voiceState === 'recording') {
+            if (voiceState === 'recording' && isVoiceOwnedByCurrentSession) {
               void stopAndTranscribe();
               return;
             }
-            if (voiceState === 'transcribing') {
-              discardRecording();
+            if (voiceState === 'transcribing' && isVoiceOwnedByCurrentSession) {
               return;
             }
             void startRecording();
           }}
           disabled={!hasActiveSession}
-          className={`cockpit-toolbar-button min-h-11 self-end px-3 ${voiceState === 'recording' ? 'bg-red-500/12 text-red-400 border-red-500/40' : voiceState === 'transcribing' ? 'bg-primary/12 text-primary border-primary/40' : ''}`}
+          className={`cockpit-toolbar-button min-h-11 self-end px-3 ${voiceState === 'recording' && isVoiceOwnedByCurrentSession ? 'bg-red-500/12 text-red-400 border-red-500/40' : voiceState === 'transcribing' && isVoiceOwnedByCurrentSession ? 'bg-primary/12 text-primary border-primary/40' : ''}`}
           title={
-            voiceState === 'recording'
-              ? 'Stop recording and transcribe'
-              : voiceState === 'transcribing'
-                ? 'Transcribing audio'
-                : 'Record voice message'
+            hasForeignVoiceSession
+              ? `Recording is active in ${voiceOriginLabel || 'another chat'}. Use the floating control.`
+              : voiceState === 'recording' && isVoiceOwnedByCurrentSession
+                ? 'Stop recording and transcribe'
+                : voiceState === 'transcribing' && isVoiceOwnedByCurrentSession
+                  ? 'Transcribing audio'
+                  : 'Record voice message'
           }
           aria-label={
-            voiceState === 'recording'
-              ? 'Stop recording and transcribe'
-              : voiceState === 'transcribing'
-                ? 'Transcribing audio'
-                : 'Record voice message'
+            hasForeignVoiceSession
+              ? `Recording is active in ${voiceOriginLabel || 'another chat'}. Use the floating control.`
+              : voiceState === 'recording' && isVoiceOwnedByCurrentSession
+                ? 'Stop recording and transcribe'
+                : voiceState === 'transcribing' && isVoiceOwnedByCurrentSession
+                  ? 'Transcribing audio'
+                  : 'Record voice message'
           }
-          aria-pressed={voiceState === 'recording'}
+          aria-pressed={voiceState === 'recording' && isVoiceOwnedByCurrentSession}
         >
-          {voiceState === 'transcribing'
+          {voiceState === 'transcribing' && isVoiceOwnedByCurrentSession
             ? <Loader2 size={16} className="animate-spin" />
             : <Mic size={16} />}
         </button>
@@ -537,14 +528,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
       <div className="bg-card/92 px-3 pb-2 text-[0.733rem] text-muted-foreground sm:px-4">
         {!hasActiveSession
           ? 'Create a top-level agent to start a new branch, or select an existing session to continue.'
-          : voiceState === 'recording'
+          : hasForeignVoiceSession
+          ? `Recording continues in ${voiceOriginLabel || 'another chat'}. Use the floating control to stop and transcribe.`
+          : voiceState === 'recording' && isVoiceOwnedByCurrentSession
           ? (
             <>
               <span className="sm:hidden">Recording… Enter/Send/Mic transcribes now · Double Shift discards</span>
               <span className="hidden sm:inline">Recording… Enter, Send, or mic transcribes immediately · Double Left Shift discards</span>
             </>
           )
-          : voiceState === 'transcribing'
+          : voiceState === 'transcribing' && isVoiceOwnedByCurrentSession
           ? 'Transcribing…'
           : (
             <>

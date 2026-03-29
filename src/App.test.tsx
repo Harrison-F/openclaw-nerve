@@ -131,6 +131,7 @@ vi.mock('@/contexts/ChatContext', () => ({
     activityLog: [],
     currentToolDescription: null,
     handleSend: vi.fn(),
+    handleSendToSession: vi.fn(),
     handleAbort: vi.fn(),
     handleReset: vi.fn(),
     loadMore: vi.fn(),
@@ -209,6 +210,21 @@ vi.mock('@/hooks/useGatewayRestart', () => ({
 
 vi.mock('@/hooks/useKeyboardShortcuts', () => ({
   useKeyboardShortcuts: vi.fn(),
+}));
+
+vi.mock('@/features/voice/useVoiceInput', () => ({
+  invalidatePhrasesCache: vi.fn(),
+  useVoiceInput: () => ({
+    voiceState: 'idle',
+    interimTranscript: '',
+    startRecording: vi.fn(),
+    stopAndTranscribe: vi.fn(),
+    discardRecording: vi.fn(),
+    wakeWordEnabled: false,
+    toggleWakeWord: vi.fn(),
+    error: null,
+    clearError: vi.fn(),
+  }),
 }));
 
 vi.mock('@/features/command-palette/commands', () => ({

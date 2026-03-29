@@ -15,7 +15,7 @@ import {
   lazy,
   Suspense,
 } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCw, PlugZap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, RotateCw, PlugZap, Mic, Loader2, Square } from 'lucide-react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
@@ -30,6 +30,7 @@ import { StatusBar } from '@/components/StatusBar';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { WorkspaceSwitchDialog } from '@/components/WorkspaceSwitchDialog';
 import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
+import { invalidatePhrasesCache, useVoiceInput } from '@/features/voice/useVoiceInput';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { ViewMode } from '@/features/command-palette/commands';
 import { ResizablePanels } from '@/components/ResizablePanels';
@@ -98,7 +99,7 @@ export default function App({ onLogout }: AppProps) {
   const {
     messages, isGenerating, stream, processingStage,
     lastEventTimestamp, activityLog, currentToolDescription,
-    handleSend, handleAbort, handleReset,
+    handleSend, handleSendToSession, handleAbort, handleReset,
     loadMore, hasMore,
     showResetConfirm, confirmReset, cancelReset,
   } = useChat();
@@ -115,6 +116,99 @@ export default function App({ onLogout }: AppProps) {
     toggleEvents, toggleLog, toggleTelemetry,
     setTheme, setFont,
   } = useSettings();
+
+  const [voiceLang, setVoiceLang] = useState('en');
+  const [voicePhrasesVersion, setVoicePhrasesVersion] = useState(0);
+  const [voiceOriginSessionKey, setVoiceOriginSessionKey] = useState<string | null>(null);
+  const voiceOriginSessionKeyRef = useRef<string | null>(null);
+  const [voiceStartedAt, setVoiceStartedAt] = useState<number | null>(null);
+  const [voiceElapsedMs, setVoiceElapsedMs] = useState(0);
+
+  useEffect(() => {
+    voiceOriginSessionKeyRef.current = voiceOriginSessionKey;
+  }, [voiceOriginSessionKey]);
+
+  useEffect(() => {
+    let currentController: AbortController | null = null;
+
+    const fetchLang = () => {
+      currentController?.abort();
+      const controller = new AbortController();
+      currentController = controller;
+
+      fetch('/api/language', { signal: controller.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!controller.signal.aborted && data?.language) {
+            setVoiceLang(data.language);
+          }
+        })
+        .catch((err) => {
+          if ((err as DOMException)?.name === 'AbortError') return;
+        });
+    };
+
+    const handlePhrasesChanged = () => {
+      invalidatePhrasesCache();
+      setVoicePhrasesVersion((v) => v + 1);
+    };
+
+    fetchLang();
+    window.addEventListener('nerve:language-changed', fetchLang);
+    window.addEventListener('nerve:voice-phrases-changed', handlePhrasesChanged);
+    return () => {
+      window.removeEventListener('nerve:language-changed', fetchLang);
+      window.removeEventListener('nerve:voice-phrases-changed', handlePhrasesChanged);
+      currentController?.abort();
+    };
+  }, []);
+
+  const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
+  const {
+    voiceState,
+    interimTranscript,
+    startRecording,
+    stopAndTranscribe,
+    discardRecording,
+    wakeWordEnabled: voiceWakeWordEnabled,
+    toggleWakeWord,
+    error: voiceError,
+    clearError: clearVoiceError,
+  } = useVoiceInput((text) => {
+    const targetSessionKey = voiceOriginSessionKeyRef.current;
+    if (!targetSessionKey) return;
+    void handleSendToSession(targetSessionKey, `[voice] ${text}`);
+  }, agentName, voiceLang, voicePhrasesVersion, effectiveSttInputMode);
+
+  useEffect(() => {
+    if (voiceState === 'recording' && voiceStartedAt === null) {
+      const startedAt = Date.now();
+      setVoiceStartedAt(startedAt);
+      setVoiceElapsedMs(0);
+      return;
+    }
+
+    if (voiceState === 'idle' || voiceState === 'listening') {
+      setVoiceStartedAt(null);
+      setVoiceElapsedMs(0);
+      setVoiceOriginSessionKey(null);
+    }
+  }, [voiceStartedAt, voiceState]);
+
+  useEffect(() => {
+    if (voiceStartedAt === null || (voiceState !== 'recording' && voiceState !== 'transcribing')) return;
+
+    const tick = () => setVoiceElapsedMs(Date.now() - voiceStartedAt);
+    tick();
+    const interval = window.setInterval(tick, 250);
+    return () => window.clearInterval(interval);
+  }, [voiceStartedAt, voiceState]);
+
+  const handleStartPersistentRecording = useCallback(async () => {
+    if (!currentSession) return;
+    setVoiceOriginSessionKey(currentSession);
+    await startRecording();
+  }, [currentSession, startRecording]);
 
   // Connection management (extracted hook)
   const {
@@ -426,6 +520,13 @@ export default function App({ onLogout }: AppProps) {
     return agentName;
   }, [currentSessionData, agentName]);
 
+  const voiceOriginSessionLabel = useMemo(() => {
+    if (!voiceOriginSessionKey) return null;
+    const originSession = sessions.find((session) => getSessionKey(session) === voiceOriginSessionKey);
+    if (originSession) return getSessionDisplayLabel(originSession, agentName);
+    return voiceOriginSessionKey;
+  }, [agentName, sessions, voiceOriginSessionKey]);
+
   const handleRenameCurrentSession = useCallback(async (nextTitle: string) => {
     if (!currentSession) return;
     await renameSession(currentSession, nextTitle);
@@ -716,6 +817,15 @@ export default function App({ onLogout }: AppProps) {
             onToggleMobileTopBar={isCompactLayout ? toggleMobileTopBar : undefined}
             isMobileTopBarHidden={isMobileTopBarHidden}
             onOpenWorkspacePath={openWorkspacePath}
+            voiceState={voiceState}
+            interimTranscript={interimTranscript}
+            startRecording={handleStartPersistentRecording}
+            stopAndTranscribe={stopAndTranscribe}
+            wakeWordEnabled={voiceWakeWordEnabled}
+            toggleWakeWord={toggleWakeWord}
+            voiceError={voiceError}
+            clearVoiceError={clearVoiceError}
+            voiceOriginSessionKey={voiceOriginSessionKey}
           />
         </PanelErrorBoundary>
       }
@@ -784,6 +894,52 @@ export default function App({ onLogout }: AppProps) {
       >
         Skip to chat
       </a>
+      {(voiceState === 'recording' || voiceState === 'transcribing') && voiceOriginSessionKey && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
+          <div className="pointer-events-auto flex w-full max-w-xl items-center gap-3 rounded-2xl border border-border/80 bg-card/95 px-4 py-3 text-sm text-foreground shadow-[0_22px_60px_rgba(0,0,0,0.34)] backdrop-blur-xl">
+            <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-2xl ${voiceState === 'recording' ? 'bg-red-500/12 text-red-400' : 'bg-primary/12 text-primary'}`}>
+              {voiceState === 'transcribing' ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold tracking-[-0.02em]">
+                  {voiceState === 'recording' ? 'Recording in progress' : 'Transcribing voice note'}
+                </span>
+                {voiceElapsedMs > 0 && (
+                  <span className="rounded-full bg-background/70 px-2 py-0.5 font-mono text-[0.7rem] text-muted-foreground">
+                    {Math.floor(voiceElapsedMs / 60000).toString().padStart(2, '0')}:{Math.floor((voiceElapsedMs % 60000) / 1000).toString().padStart(2, '0')}
+                  </span>
+                )}
+              </div>
+              <p className="truncate text-xs text-muted-foreground">
+                {voiceState === 'recording'
+                  ? `This recording will be sent to ${voiceOriginSessionLabel || 'the chat where it started'}.`
+                  : `Finishing and delivering to ${voiceOriginSessionLabel || 'the originating chat'}.`}
+              </p>
+            </div>
+            {voiceState === 'recording' && (
+              <button
+                type="button"
+                onClick={() => { void discardRecording(); }}
+                className="cockpit-toolbar-button"
+              >
+                <Square size={14} aria-hidden="true" />
+                Discard
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { void stopAndTranscribe(); }}
+              disabled={voiceState !== 'recording'}
+              className={`cockpit-toolbar-button ${voiceState !== 'recording' ? 'cursor-not-allowed opacity-50' : ''}`}
+            >
+              {voiceState === 'transcribing' ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Mic size={14} aria-hidden="true" />}
+              {voiceState === 'recording' ? 'Stop + transcribe' : 'Transcribing…'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <ConnectDialog
         open={dialogOpen && connectionState !== 'connected' && connectionState !== 'reconnecting'}
         onConnect={handleConnect}

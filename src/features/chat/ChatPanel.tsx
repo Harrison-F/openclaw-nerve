@@ -3,6 +3,7 @@ import type { ProcessingStage, ActivityLogEntry, ChatStreamState } from '@/conte
 import { ToolCallBlock } from './ToolCallBlock';
 import { MessageBubble } from './MessageBubble';
 import { InputBar, type InputBarHandle } from './InputBar';
+import type { VoiceState } from '@/features/voice/useVoiceInput';
 import { SearchBar } from './SearchBar';
 import { useMessageSearch } from './useMessageSearch';
 import { ActivityLog, ChatHeader, ProcessingIndicator, ScrollToBottomButton, StreamingMessage, ToolGroupBlock } from './components';
@@ -47,6 +48,15 @@ interface ChatPanelProps {
   isMobileTopBarHidden?: boolean;
   /** Open or reveal a safe workspace path in the file explorer/editor. */
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
+  voiceState: VoiceState;
+  interimTranscript: string;
+  startRecording: () => Promise<void> | void;
+  stopAndTranscribe: () => Promise<void> | void;
+  wakeWordEnabled: boolean;
+  toggleWakeWord: () => void;
+  voiceError: string | null;
+  clearVoiceError: () => void;
+  voiceOriginSessionKey?: string | null;
 }
 
 export interface ChatPanelHandle {
@@ -64,6 +74,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
+  voiceState,
+  interimTranscript,
+  startRecording,
+  stopAndTranscribe,
+  wakeWordEnabled,
+  toggleWakeWord,
+  voiceError,
+  clearVoiceError,
+  voiceOriginSessionKey,
 }, ref) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
@@ -383,6 +402,15 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         isGenerating={isGenerating}
         onWakeWordState={onWakeWordState}
         agentName={agentName}
+        voiceState={voiceState}
+        interimTranscript={interimTranscript}
+        startRecording={startRecording}
+        stopAndTranscribe={stopAndTranscribe}
+        wakeWordEnabled={wakeWordEnabled}
+        toggleWakeWord={toggleWakeWord}
+        voiceError={voiceError}
+        clearVoiceError={clearVoiceError}
+        voiceOriginSessionKey={voiceOriginSessionKey}
       />
 
     </div>
