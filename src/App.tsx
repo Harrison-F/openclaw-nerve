@@ -536,7 +536,7 @@ export default function App({ onLogout }: AppProps) {
     baselineWidth: null,
   });
   const [chatToolRegionWidth, setChatToolRegionWidth] = useState<number | null>(null);
-  const [toolPanelManualWidth] = useState(false);
+  const [toolPanelManualWidth, setToolPanelManualWidth] = useState(false);
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
   const activeChatPaneRef = useRef<HTMLDivElement | null>(null);
@@ -1482,10 +1482,11 @@ export default function App({ onLogout }: AppProps) {
                   onMouseDown={(event) => {
                     if (toolPanelCollapsed) return;
                     event.preventDefault();
+                    setToolPanelManualWidth(true);
                     const startX = event.clientX;
                     const startWidth = toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2));
                     const onMove = (moveEvent: MouseEvent) => {
-                      setToolPanelWidth(startWidth - (moveEvent.clientX - startX));
+                      handleSetToolPanelWidthManual(startWidth - (moveEvent.clientX - startX));
                     };
                     const onUp = () => {
                       window.removeEventListener('mousemove', onMove);
