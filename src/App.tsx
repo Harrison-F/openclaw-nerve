@@ -900,17 +900,16 @@ export default function App({ onLogout }: AppProps) {
     const baselineWidth = toolPanelChatBaselineWidth ?? desktopRightPanelWidth;
     if (!baselineWidth || baselineWidth <= 0) return;
 
-    const targetDefaultWidth = Math.max(320, Math.round(baselineWidth * 0.5));
+    const exactHalfWidth = Math.max(320, Math.round(baselineWidth / 2));
 
     if (toolPanelWidth === null) {
-      setToolPanelWidth(targetDefaultWidth);
+      setToolPanelWidth(exactHalfWidth);
       return;
     }
 
-    // One-time migration guard: if an older saved width is clearly undersized,
-    // lift it to the intended 50%-of-chat default instead of preserving the cramped layout forever.
-    if (toolPanelWidth < Math.max(320, Math.round(targetDefaultWidth * 0.9))) {
-      setToolPanelWidth(targetDefaultWidth);
+    // Keep the live width aligned to exactly half of the pre-tool chat width.
+    if (Math.abs(toolPanelWidth - exactHalfWidth) > 2) {
+      setToolPanelWidth(exactHalfWidth);
     }
   }, [desktopRightPanelWidth, setToolPanelWidth, toolPanelChatBaselineWidth, toolPanelWidth]);
 
@@ -1311,7 +1310,7 @@ export default function App({ onLogout }: AppProps) {
               onResize={() => {}}
               minLeftPercent={45}
               maxLeftPercent={85}
-              rightWidthPx={toolPanelCollapsed ? TOOL_PANEL_RAIL_WIDTH_PX : (toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) * 0.5)))}
+              rightWidthPx={toolPanelCollapsed ? TOOL_PANEL_RAIL_WIDTH_PX : (toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2)))}
               onRightWidthChange={toolPanelCollapsed ? undefined : setToolPanelWidth}
               left={(
                 <ResizablePanels
@@ -1320,7 +1319,7 @@ export default function App({ onLogout }: AppProps) {
                   onResize={setPanelRatio}
                   minLeftPercent={30}
                   maxLeftPercent={85}
-                  rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
+                  rightWidthPx={toolPanelCollapsed ? (fileBrowserCollapsed ? desktopRightPanelWidth : null) : (toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2)))}
                   onRightWidthChange={fileBrowserCollapsed || !toolPanelCollapsed ? undefined : setDesktopRightPanelWidth}
                   leftClassName="boot-panel flex flex-col"
                   rightClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
