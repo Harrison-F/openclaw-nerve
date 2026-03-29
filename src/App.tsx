@@ -1485,7 +1485,7 @@ export default function App({ onLogout }: AppProps) {
                     const startX = event.clientX;
                     const startWidth = toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2));
                     const onMove = (moveEvent: MouseEvent) => {
-                      const nextWidth = startWidth + (moveEvent.clientX - startX);
+                      const nextWidth = startWidth - (moveEvent.clientX - startX);
                       console.debug('[tool-drag]', { startX, currentX: moveEvent.clientX, startWidth, nextWidth });
                       setToolPanelManualWidth(true);
                       setToolPanelWidth(nextWidth);
