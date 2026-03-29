@@ -36,7 +36,7 @@ describe('ChatHeader', () => {
     vi.clearAllMocks();
   });
 
-  it('renders COMMS header with model selectors', () => {
+  it('renders chat title input with model selectors', () => {
     const mockUseModelEffort = vi.mocked(useModelEffort);
     mockUseModelEffort.mockReturnValue(defaultMockHook);
 
@@ -45,10 +45,11 @@ describe('ChatHeader', () => {
         onReset={mockOnReset}
         onAbort={mockOnAbort}
         isGenerating={false}
+        sessionTitle="System"
       />
     );
 
-    expect(screen.getByText('Comms')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('System')).toBeInTheDocument();
     expect(screen.getByText('GPT-4')).toBeInTheDocument();
     expect(screen.getByText('Balanced')).toBeInTheDocument();
   });
@@ -177,5 +178,27 @@ describe('ChatHeader', () => {
     );
 
     expect(screen.getByRole('button', { name: /reset session/i })).toBeInTheDocument();
+  });
+
+  it('commits a renamed chat title on blur', async () => {
+    const mockUseModelEffort = vi.mocked(useModelEffort);
+    const mockRename = vi.fn().mockResolvedValue(undefined);
+    mockUseModelEffort.mockReturnValue(defaultMockHook);
+
+    render(
+      <ChatHeader
+        onReset={mockOnReset}
+        onAbort={mockOnAbort}
+        isGenerating={false}
+        sessionTitle="System"
+        onRenameSession={mockRename}
+      />
+    );
+
+    const input = screen.getByLabelText(/chat title/i);
+    fireEvent.change(input, { target: { value: 'Nerve work' } });
+    fireEvent.blur(input);
+
+    expect(mockRename).toHaveBeenCalledWith('Nerve work');
   });
 });

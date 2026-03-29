@@ -106,7 +106,17 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
   const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
 
-  const { voiceState, interimTranscript, wakeWordEnabled, toggleWakeWord, error: voiceError, clearError: clearVoiceError } = useVoiceInput((text) => {
+  const {
+    voiceState,
+    interimTranscript,
+    startRecording,
+    stopAndTranscribe,
+    discardRecording,
+    wakeWordEnabled,
+    toggleWakeWord,
+    error: voiceError,
+    clearError: clearVoiceError,
+  } = useVoiceInput((text) => {
     if (!hasActiveSession) {
       indicateMissingSession();
       return;
@@ -253,11 +263,22 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
     onWakeWordState?.(wakeWordEnabled, toggleWakeWord);
   }, [wakeWordEnabled, toggleWakeWord, onWakeWordState]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!hasActiveSession) {
       indicateMissingSession();
       return;
     }
+
+    if (voiceState === 'recording') {
+      clearVoiceError();
+      await stopAndTranscribe();
+      return;
+    }
+
+    if (voiceState === 'transcribing') {
+      return;
+    }
+
     const text = inputRef.current?.value.trim();
     if (!text && pendingImages.length === 0) {
       // Shake on empty send attempt
@@ -268,11 +289,11 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
 
     // Add to persistent command history (deduplication handled by hook)
     if (text) inputHistory.addToHistory(text);
-    
+
     // Trigger pulse animation on successful send
     setSendPulse(true);
     setTimeout(() => setSendPulse(false), 400);
-    
+
     const input = inputRef.current;
     if (input) {
       input.value = '';
@@ -460,6 +481,45 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           <Paperclip size={16} />
         </button>
         <button
+          onClick={() => {
+            if (!hasActiveSession) {
+              indicateMissingSession();
+              return;
+            }
+            clearVoiceError();
+            if (voiceState === 'recording') {
+              void stopAndTranscribe();
+              return;
+            }
+            if (voiceState === 'transcribing') {
+              discardRecording();
+              return;
+            }
+            void startRecording();
+          }}
+          disabled={!hasActiveSession}
+          className={`cockpit-toolbar-button min-h-11 self-end px-3 ${voiceState === 'recording' ? 'bg-red-500/12 text-red-400 border-red-500/40' : voiceState === 'transcribing' ? 'bg-primary/12 text-primary border-primary/40' : ''}`}
+          title={
+            voiceState === 'recording'
+              ? 'Stop recording and transcribe'
+              : voiceState === 'transcribing'
+                ? 'Transcribing audio'
+                : 'Record voice message'
+          }
+          aria-label={
+            voiceState === 'recording'
+              ? 'Stop recording and transcribe'
+              : voiceState === 'transcribing'
+                ? 'Transcribing audio'
+                : 'Record voice message'
+          }
+          aria-pressed={voiceState === 'recording'}
+        >
+          {voiceState === 'transcribing'
+            ? <Loader2 size={16} className="animate-spin" />
+            : <Mic size={16} />}
+        </button>
+        <button
           onClick={handleSend}
           disabled={isGenerating || !hasActiveSession}
           aria-label={
@@ -480,16 +540,16 @@ export const InputBar = forwardRef<InputBarHandle, InputBarProps>(function Input
           : voiceState === 'recording'
           ? (
             <>
-              <span className="sm:hidden">Recording… Shift to send · Double Shift to discard</span>
-              <span className="hidden sm:inline">Recording… Left Shift to send · Double Left Shift to discard</span>
+              <span className="sm:hidden">Recording… Enter/Send/Mic transcribes now · Double Shift discards</span>
+              <span className="hidden sm:inline">Recording… Enter, Send, or mic transcribes immediately · Double Left Shift discards</span>
             </>
           )
           : voiceState === 'transcribing'
           ? 'Transcribing…'
           : (
             <>
-              <span className="sm:hidden">Enter to send · Shift+Enter newline · Double Shift voice</span>
-              <span className="hidden sm:inline">Enter or ⌘Enter to send · Shift+Enter for newline · Double Left Shift for voice · Ctrl+F search</span>
+              <span className="sm:hidden">Enter to send · Shift+Enter newline · Mic or double Shift for voice</span>
+              <span className="hidden sm:inline">Enter or ⌘Enter to send · Shift+Enter for newline · Mic button or double Left Shift for voice · Ctrl+F search</span>
             </>
           )}
       </div>

@@ -15,7 +15,7 @@ import {
   lazy,
   Suspense,
 } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, RotateCw, PlugZap } from 'lucide-react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
@@ -121,6 +121,9 @@ export default function App({ onLogout }: AppProps) {
     editableToken, setEditableToken,
     handleConnect, handleReconnect,
     serverSideAuth,
+    startupPending,
+    showManagedFallback,
+    openManualConnect,
   } = useConnectionManager();
 
   // Track file change events for tree refresh. Sequence keeps repeated same-path updates visible.
@@ -423,6 +426,11 @@ export default function App({ onLogout }: AppProps) {
     return agentName;
   }, [currentSessionData, agentName]);
 
+  const handleRenameCurrentSession = useCallback(async (nextTitle: string) => {
+    if (!currentSession) return;
+    await renameSession(currentSession, nextTitle);
+  }, [currentSession, renameSession]);
+
   const contextTokens = currentSessionData?.totalTokens ?? 0;
   const contextLimit = currentSessionData?.contextTokens || getContextLimit(model);
 
@@ -650,6 +658,8 @@ export default function App({ onLogout }: AppProps) {
             searchOpen={searchOpen}
             onSearchClose={closeSearch}
             agentName={currentSessionDisplayName}
+            sessionTitle={currentSessionDisplayName}
+            onRenameSession={handleRenameCurrentSession}
             loadMore={loadMore}
             hasMore={hasMore}
             onToggleFileBrowser={isCompactLayout ? handleToggleFileBrowser : fileBrowserCollapsed ? handleToggleFileBrowser : undefined}
@@ -763,6 +773,47 @@ export default function App({ onLogout }: AppProps) {
         officialUrl={officialUrl}
         serverSideAuth={serverSideAuth}
       />
+
+      {startupPending && connectionState !== 'connected' && (
+        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-primary/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
+          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-primary/10 text-primary">
+            <PlugZap size={14} aria-hidden="true" />
+          </span>
+          <span className="min-w-0 text-left leading-5">Connecting to your workspace…</span>
+          <span className="size-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
+        </div>
+      )}
+
+      {showManagedFallback && connectionState === 'disconnected' && !dialogOpen && (
+        <div className="fixed left-1/2 top-12 z-50 flex w-[min(92vw,520px)] -translate-x-1/2 items-start gap-3 rounded-3xl border border-border/75 bg-card/96 px-4 py-4 text-sm text-foreground shadow-[0_24px_60px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:px-5">
+          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-2xl bg-orange/10 text-orange">
+            <AlertTriangle size={16} aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold tracking-[-0.02em]">Couldn’t connect automatically.</p>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {connectError || 'Managed gateway connection failed. You can retry or open connection settings.'}
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => { void handleReconnect(); }}
+                className="cockpit-toolbar-button"
+              >
+                <RotateCw size={14} aria-hidden="true" />
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={openManualConnect}
+                className="cockpit-toolbar-button"
+              >
+                Connection settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/*
        * Gateway state banners.

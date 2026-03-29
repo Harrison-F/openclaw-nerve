@@ -29,6 +29,10 @@ interface ChatPanelProps {
   id?: string;
   /** Agent display name */
   agentName?: string;
+  /** Current session title shown in the chat header. */
+  sessionTitle?: string;
+  /** Rename the current session from the chat header. */
+  onRenameSession?: (nextTitle: string) => Promise<void> | void;
   /** Load more (older) messages — returns true if still more available */
   loadMore?: () => boolean;
   /** Whether there are older messages to load */
@@ -56,6 +60,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   processingStage,
   lastEventTimestamp = 0, currentToolDescription = null, activityLog = [],
   onWakeWordState, onReset, searchOpen, onSearchClose, id, agentName = 'Agent',
+  sessionTitle = 'Chat', onRenameSession,
   loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
@@ -240,6 +245,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         onReset={onReset}
         onAbort={onAbort}
         isGenerating={isGenerating}
+        sessionTitle={sessionTitle}
+        onRenameSession={onRenameSession}
         onToggleFileBrowser={onToggleFileBrowser}
         isFileBrowserCollapsed={isFileBrowserCollapsed}
         onToggleMobileTopBar={onToggleMobileTopBar}

@@ -45,7 +45,7 @@ export function ConnectionSettings({
       <div className="space-y-1.5">
         <span className="cockpit-kicker">
           <span className="text-primary">◆</span>
-          Gateway
+          Connection Recovery
         </span>
       </div>
 
@@ -54,7 +54,7 @@ export function ConnectionSettings({
         <div className="flex min-w-0 items-center gap-3">
           <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${STATUS_COLORS[connectionState]}`} />
           <div className="min-w-0">
-            <p className="text-sm font-medium text-foreground">Gateway status</p>
+            <p className="text-sm font-medium text-foreground">Managed connection status</p>
             <p className="text-xs text-muted-foreground">{STATUS_LABELS[connectionState]}</p>
           </div>
         </div>
@@ -71,7 +71,7 @@ export function ConnectionSettings({
 
       {/* Gateway URL */}
       <label className="cockpit-field">
-        <span className="cockpit-field-label">Gateway URL</span>
+        <span className="cockpit-field-label">Gateway URL (advanced)</span>
         <input
           type="text"
           value={url}
@@ -80,12 +80,12 @@ export function ConnectionSettings({
           className="cockpit-input cockpit-input-mono"
           placeholder={DEFAULT_GATEWAY_WS}
         />
-        <span className="cockpit-field-hint">Use the local gateway or paste a remote relay endpoint.</span>
+        <span className="cockpit-field-hint">Usually leave this alone. Change it only for custom or recovery scenarios.</span>
       </label>
 
       {/* Auth Token */}
       <label className="cockpit-field">
-        <span className="cockpit-field-label">Auth Token</span>
+        <span className="cockpit-field-label">Gateway token (advanced)</span>
         <div className="relative">
           <input
             type={showToken ? 'text' : 'password'}
@@ -104,7 +104,7 @@ export function ConnectionSettings({
             {showToken ? <EyeOff size={14} /> : <Eye size={14} />}
           </button>
         </div>
-        <span className="cockpit-field-hint">Leave blank for unsecured local development.</span>
+        <span className="cockpit-field-hint">Managed setups should usually leave this blank. Use only for manual recovery or custom gateways.</span>
       </label>
       {/* Gateway Service */}
       {onGatewayRestart && (

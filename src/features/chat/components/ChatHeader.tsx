@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { useModelEffort } from './useModelEffort';
@@ -6,6 +7,8 @@ interface ChatHeaderProps {
   onReset?: () => void;
   onAbort: () => void;
   isGenerating: boolean;
+  sessionTitle?: string;
+  onRenameSession?: (nextTitle: string) => Promise<void> | void;
   /** File explorer toggle button shown on smaller layouts. */
   onToggleFileBrowser?: () => void;
   /** Whether the file explorer is currently collapsed. */
@@ -26,6 +29,8 @@ export function ChatHeader({
   onReset,
   onAbort,
   isGenerating,
+  sessionTitle = '',
+  onRenameSession,
   onToggleFileBrowser,
   isFileBrowserCollapsed = true,
   onToggleMobileTopBar,
@@ -41,6 +46,20 @@ export function ChatHeader({
     controlsDisabled,
     uiError,
   } = useModelEffort();
+  const [draftTitle, setDraftTitle] = useState(sessionTitle);
+
+  useEffect(() => {
+    setDraftTitle(sessionTitle);
+  }, [sessionTitle]);
+
+  const commitTitle = async () => {
+    const trimmed = draftTitle.trim();
+    const fallbackTitle = sessionTitle.trim();
+    const nextTitle = trimmed || fallbackTitle;
+    setDraftTitle(nextTitle);
+    if (!onRenameSession || !nextTitle || nextTitle === sessionTitle.trim()) return;
+    await onRenameSession(nextTitle);
+  };
 
   return (
     <div className="panel-header items-center gap-2 overflow-x-auto border-l-[3px] border-l-primary/70 px-2.5 py-2 whitespace-nowrap sm:gap-2.5 sm:px-3 sm:py-3">
@@ -77,11 +96,24 @@ export function ChatHeader({
           <PanelLeftOpen size={17} />
         </button>
       )}
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="cockpit-badge" data-tone="primary">
-          <span className="text-[0.533rem]">◆</span>
-          Comms
-        </span>
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <input
+          type="text"
+          value={draftTitle}
+          onChange={(event) => setDraftTitle(event.target.value)}
+          onBlur={() => { void commitTitle(); }}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.currentTarget.blur();
+            } else if (event.key === 'Escape') {
+              setDraftTitle(sessionTitle);
+              event.currentTarget.blur();
+            }
+          }}
+          placeholder="Name this chat"
+          aria-label="Chat title"
+          className="min-w-0 flex-1 rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-[0.86rem] font-medium text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 focus:ring-1 focus:ring-primary/35 sm:max-w-[340px]"
+        />
       </div>
 
       {/* Model + Effort selectors on the right */}

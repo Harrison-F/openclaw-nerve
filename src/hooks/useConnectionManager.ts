@@ -24,6 +24,10 @@ export interface ConnectionManagerState {
   handleConnect: (url: string, token: string) => Promise<void>;
   handleReconnect: () => Promise<void>;
   serverSideAuth: boolean;
+  startupPending: boolean;
+  showManagedFallback: boolean;
+  openManualConnect: () => void;
+  dismissManagedFallback: () => void;
 }
 
 /** Create an AbortSignal that times out after `ms` milliseconds. */
@@ -49,7 +53,7 @@ async function fetchConnectDefaults(): Promise<{ wsUrl: string; token: string | 
 export function useConnectionManager(): ConnectionManagerState {
   const { connectionState, connect, disconnect } = useGateway();
 
-  const [dialogOpen, setDialogOpen] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
   // Editable connection settings (local state for settings drawer)
   // Lazy initializers avoid re-parsing sessionStorage on every render
@@ -57,6 +61,8 @@ export function useConnectionManager(): ConnectionManagerState {
   const [editableToken, setEditableToken] = useState(() => loadConfig().token || '');
   const [serverSideAuth, setServerSideAuth] = useState(false);
   const [officialUrl, setOfficialUrl] = useState<string | null>(null);
+  const [startupPending, setStartupPending] = useState(true);
+  const [showManagedFallback, setShowManagedFallback] = useState(false);
 
   // Track if we've attempted auto-connect to avoid re-running
   const autoConnectAttempted = useRef(false);
@@ -66,7 +72,17 @@ export function useConnectionManager(): ConnectionManagerState {
     saveConfig(url, token);
     await connect(url, token);
     setDialogOpen(false);
+    setShowManagedFallback(false);
   }, [connect]);
+
+  const openManualConnect = useCallback(() => {
+    setShowManagedFallback(false);
+    setDialogOpen(true);
+  }, []);
+
+  const dismissManagedFallback = useCallback(() => {
+    setShowManagedFallback(false);
+  }, []);
 
   // Fetch server defaults (async, can't run in initializer)
   useEffect(() => {
@@ -76,13 +92,18 @@ export function useConnectionManager(): ConnectionManagerState {
     const saved = loadConfig();
 
     // Always fetch defaults once on mount to establish serverSideAuth and officialUrl
-    fetchConnectDefaults().then((defaults) => {
+    fetchConnectDefaults().then(async (defaults) => {
       const isServerSideAuth = defaults?.serverSideAuth ?? false;
       setServerSideAuth(isServerSideAuth);
 
       const savedUrl = saved.url?.trim();
       const officialWsUrl = defaults?.wsUrl?.trim();
       const savedMatchesOfficial = areGatewayUrlsEquivalent(savedUrl, officialWsUrl);
+      const eligibleManagedPath = Boolean(
+        isServerSideAuth &&
+        officialWsUrl &&
+        (!savedUrl || savedMatchesOfficial)
+      );
 
       if (officialWsUrl) {
         setOfficialUrl(officialWsUrl);
@@ -98,23 +119,33 @@ export function useConnectionManager(): ConnectionManagerState {
         setEditableToken(defaults.token);
       }
 
-      if (isServerSideAuth && officialWsUrl && (!savedUrl || savedMatchesOfficial)) {
+      if (eligibleManagedPath) {
         setEditableToken('');
+        try {
+          await handleConnect(officialWsUrl!, '');
+        } catch {
+          setShowManagedFallback(true);
+        } finally {
+          setStartupPending(false);
+        }
+        return;
       }
 
-      // Auto-connect if server-side auth is supported and the saved gateway is
-      // either empty or the same official gateway under a loopback alias.
-      if (
-        isServerSideAuth &&
-        officialWsUrl &&
-        (!savedUrl || savedMatchesOfficial)
-      ) {
-        handleConnect(officialWsUrl, '').catch(() => {
-          // Auto-connect failed - user can manually connect via dialog
-        });
-      }
+      setStartupPending(false);
+      setDialogOpen(true);
+    }).catch(() => {
+      setStartupPending(false);
+      setDialogOpen(true);
     });
   }, [handleConnect]);
+
+  useEffect(() => {
+    if (connectionState === 'connected') {
+      setStartupPending(false);
+      setShowManagedFallback(false);
+      setDialogOpen(false);
+    }
+  }, [connectionState]);
 
   const handleReconnect = useCallback(async () => {
     // Don't reconnect if already connecting
@@ -161,5 +192,9 @@ export function useConnectionManager(): ConnectionManagerState {
     handleConnect,
     handleReconnect,
     serverSideAuth,
+    startupPending,
+    showManagedFallback,
+    openManualConnect,
+    dismissManagedFallback,
   };
 }
