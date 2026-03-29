@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { TOOL_DEFINITIONS } from '@/features/tools/toolRegistry';
 import { useModelEffort } from './useModelEffort';
@@ -44,8 +44,6 @@ export function ChatHeader({
   isFileBrowserCollapsed = true,
   onToggleMobileTopBar,
   isMobileTopBarHidden = false,
-  onToggleToolPanel,
-  isToolPanelCollapsed = false,
   selectedToolId = null,
   onSelectTool,
 }: ChatHeaderProps) {
@@ -186,18 +184,6 @@ export function ChatHeader({
               menuClassName="min-w-[220px] rounded-2xl border-border/80 bg-card/98 p-1 shadow-[0_20px_50px_rgba(0,0,0,0.28)]"
               options={toolOptions}
             />
-            {onToggleToolPanel && (
-              <button
-                type="button"
-                onClick={onToggleToolPanel}
-                className="cockpit-toolbar-button min-h-11 px-3 sm:min-h-9 sm:px-3"
-                title={isToolPanelCollapsed ? 'Open tool panel' : 'Collapse tool panel'}
-                aria-label={isToolPanelCollapsed ? 'Open tool panel' : 'Collapse tool panel'}
-              >
-                {isToolPanelCollapsed ? <PanelRightOpen size={14} aria-hidden="true" /> : <PanelRightClose size={14} aria-hidden="true" />}
-                <span className="hidden md:inline">Tools</span>
-              </button>
-            )}
           </div>
         )}
         {isGenerating && (
