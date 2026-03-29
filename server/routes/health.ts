@@ -1,5 +1,5 @@
 /**
- * GET /health — Health check endpoint.
+ * GET /health and /api/health — Health check endpoints.
  * Includes optional gateway connectivity probe.
  */
 
@@ -8,7 +8,7 @@ import { config } from '../lib/config.js';
 
 const app = new Hono();
 
-app.get('/health', async (c) => {
+async function healthResponse() {
   let gateway: 'ok' | 'unreachable' = 'unreachable';
   try {
     const res = await fetch(`${config.gatewayUrl}/health`, {
@@ -19,7 +19,10 @@ app.get('/health', async (c) => {
     // gateway unreachable — not a server failure
   }
 
-  return c.json({ status: 'ok', uptime: process.uptime(), gateway });
-});
+  return { status: 'ok', uptime: process.uptime(), gateway };
+}
+
+app.get('/health', async (c) => c.json(await healthResponse()));
+app.get('/api/health', async (c) => c.json(await healthResponse()));
 
 export default app;

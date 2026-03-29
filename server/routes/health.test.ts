@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 
-describe('GET /health', () => {
+describe('GET /health and /api/health', () => {
   let originalFetch: typeof globalThis.fetch;
 
   beforeEach(() => {
@@ -22,12 +22,25 @@ describe('GET /health', () => {
     return app;
   }
 
-  it('should return status ok and uptime', async () => {
+  it('should return status ok and uptime on /health', async () => {
     // Mock fetch to simulate gateway being reachable
     globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
 
     const app = await importHealthApp();
     const res = await app.request('/health');
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as Record<string, unknown>;
+    expect(json.status).toBe('ok');
+    expect(typeof json.uptime).toBe('number');
+    expect(json.gateway).toBe('ok');
+  });
+
+  it('should return the same payload shape on /api/health', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
+
+    const app = await importHealthApp();
+    const res = await app.request('/api/health');
     expect(res.status).toBe(200);
 
     const json = (await res.json()) as Record<string, unknown>;
