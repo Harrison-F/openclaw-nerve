@@ -129,6 +129,41 @@ describe('gateway routes', () => {
       expect(mod.MODEL_LIST_TIMEOUT_MS).toBeGreaterThanOrEqual(15_000);
     });
 
+    it('parses model list even when CLI prepends warning lines', async () => {
+      execFileImpl = (_bin: unknown, _args: unknown, _opts: unknown, cb: unknown) => {
+        const noisy = '[plugins] [composio] No consumer key configured\n{"models":[{"key":"openai-codex/gpt-5.4","available":true}]}';
+        (cb as (err: Error | null, stdout: string) => void)(null, noisy);
+      };
+      invokeGatewayImpl = () => ({});
+
+      vi.resetModules();
+      vi.doMock('node:child_process', () => ({ execFile: (...args: unknown[]) => execFileImpl(...args) }));
+      vi.doMock('../lib/config.js', () => ({
+        config: {
+          auth: false, port: 3000, host: '127.0.0.1', sslPort: 3443,
+          gatewayUrl: 'http://localhost:3100', gatewayToken: 'test-token',
+        },
+        SESSION_COOKIE_NAME: 'nerve_session_3000',
+      }));
+      vi.doMock('../middleware/rate-limit.js', () => ({
+        rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+        rateLimitRestart: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
+      }));
+      vi.doMock('../lib/openclaw-bin.js', () => ({ resolveOpenclawBin: () => '/usr/bin/openclaw' }));
+      vi.doMock('../lib/gateway-client.js', () => ({
+        invokeGatewayTool: vi.fn(async (tool: string, args: Record<string, unknown>) => invokeGatewayImpl(tool, args)),
+      }));
+
+      const mod = await import('./gateway.js');
+      const app = new Hono();
+      app.route('/', mod.default);
+
+      const res = await app.request('/api/gateway/models');
+      expect(res.status).toBe(200);
+      const json = (await res.json()) as { models: Array<{ id: string }> };
+      expect(json.models.map((m) => m.id)).toContain('openai-codex/gpt-5.4');
+    });
+
     it('returns empty array when openclaw binary fails', async () => {
       execFileImpl = (_bin: unknown, _args: unknown, _opts: unknown, cb: unknown) => {
         (cb as (err: Error, stdout: string) => void)(new Error('not found'), '');

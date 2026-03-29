@@ -68,7 +68,11 @@ interface CliModelsOutput {
  *  When `configuredOnly` is true, include all models regardless of `available` flag
  *  (user explicitly configured them). Otherwise filter to available only. */
 function parseModelsOutput(stdout: string, configuredOnly = false): GatewayModelInfo[] {
-  const data = JSON.parse(stdout) as CliModelsOutput;
+  const trimmed = stdout.trim();
+  const jsonStart = trimmed.indexOf('{');
+  if (jsonStart < 0) return [];
+
+  const data = JSON.parse(trimmed.slice(jsonStart)) as CliModelsOutput;
   if (!Array.isArray(data.models)) return [];
   const out: GatewayModelInfo[] = [];
   for (const m of data.models) {
