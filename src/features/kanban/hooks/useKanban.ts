@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { KanbanTask, TaskStatus, TaskPriority } from '../types';
+import type { KanbanTask, KanbanBoard, TaskStatus, TaskPriority } from '../types';
 
 /* ── API response shape ── */
 interface TasksResponse {
@@ -8,6 +8,10 @@ interface TasksResponse {
   limit: number;
   offset: number;
   hasMore: boolean;
+}
+
+interface BoardsResponse {
+  boards: KanbanBoard[];
 }
 
 /* ── Filter state ── */
@@ -27,6 +31,7 @@ export interface VersionConflictError extends Error {
 
 /* ── Create / Update payloads ── */
 export interface CreateTaskPayload {
+  boardId?: string;
   title: string;
   description?: string;
   status?: TaskStatus;
@@ -46,8 +51,9 @@ export interface UpdateTaskPayload {
 }
 
 /* ── Build query string from filters ── */
-function buildQuery(filters: KanbanFilters): string {
+function buildQuery(filters: KanbanFilters, boardId?: string): string {
   const p = new URLSearchParams();
+  if (boardId) p.set('boardId', boardId);
   if (filters.q) p.set('q', filters.q);
   for (const pr of filters.priority) p.append('priority[]', pr);
   if (filters.assignee) p.set('assignee', filters.assignee);
@@ -63,9 +69,20 @@ export function useKanban() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<KanbanFilters>(EMPTY_FILTERS);
+  const [boards, setBoards] = useState<KanbanBoard[]>([]);
+  const [activeBoardId, setActiveBoardId] = useState<string>('general');
   const abortRef = useRef<AbortController | null>(null);
 
   /* ── Fetch ── */
+
+  const fetchBoards = useCallback(async (): Promise<KanbanBoard[]> => {
+    const res = await fetch('/api/kanban/boards');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data: BoardsResponse = await res.json();
+    setBoards(data.boards);
+    setActiveBoardId((prev) => (data.boards.some((board) => board.id === prev) ? prev : (data.boards[0]?.id ?? 'general')));
+    return data.boards;
+  }, []);
 
   const fetchTasks = useCallback(async (f?: KanbanFilters, { silent = false }: { silent?: boolean } = {}) => {
     abortRef.current?.abort();
@@ -78,7 +95,7 @@ export function useKanban() {
       setError(null);
     }
     try {
-      const qs = buildQuery(f ?? filters);
+      const qs = buildQuery(f ?? filters, activeBoardId);
       const res = await fetch(`/api/kanban/tasks?${qs}`, { signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data: TasksResponse = await res.json();
@@ -92,13 +109,17 @@ export function useKanban() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [filters]);
+  }, [activeBoardId, filters]);
 
   /* Initial fetch + refetch on filter change */
   useEffect(() => {
+    void fetchBoards();
+  }, [fetchBoards]);
+
+  useEffect(() => {
     fetchTasks(filters);
     return () => abortRef.current?.abort();
-  }, [filters, fetchTasks]);
+  }, [activeBoardId, filters, fetchTasks]);
 
   /* Auto-refresh every 5s so board stays current (silent — no loading flash) */
   useEffect(() => {
@@ -106,12 +127,43 @@ export function useKanban() {
     return () => clearInterval(id);
   }, [fetchTasks]);
 
+  const createBoard = useCallback(async (name?: string): Promise<KanbanBoard> => {
+    const res = await fetch('/api/kanban/boards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(name ? { name } : {}),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.details || body.error || `HTTP ${res.status}`);
+    }
+    const board: KanbanBoard = await res.json();
+    await fetchBoards();
+    setActiveBoardId(board.id);
+    return board;
+  }, [fetchBoards]);
+
+  const renameBoard = useCallback(async (id: string, name: string): Promise<KanbanBoard> => {
+    const res = await fetch(`/api/kanban/boards/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.details || body.error || `HTTP ${res.status}`);
+    }
+    const board: KanbanBoard = await res.json();
+    await fetchBoards();
+    return board;
+  }, [fetchBoards]);
+
   /* ── Mutations ── */
   const createTask = useCallback(async (payload: CreateTaskPayload): Promise<KanbanTask> => {
     const res = await fetch('/api/kanban/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, boardId: payload.boardId ?? activeBoardId }),
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
@@ -272,9 +324,17 @@ export function useKanban() {
     return counts;
   }, [tasks]);
 
+  const activeBoard = useMemo(() => boards.find((board) => board.id === activeBoardId) ?? boards[0] ?? null, [activeBoardId, boards]);
+
   return {
     tasks,
     setTasks,
+    boards,
+    activeBoard,
+    activeBoardId,
+    setActiveBoardId,
+    createBoard,
+    renameBoard,
     total,
     loading,
     error,

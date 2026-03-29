@@ -29,6 +29,7 @@ import type {
   TaskPriority,
   TaskActor,
   ProposalStatus,
+  KanbanBoard,
 } from '../lib/kanban-store.js';
 
 const app = new Hono();
@@ -255,6 +256,7 @@ const runLinkSchema = z.object({
 });
 
 const createTaskSchema = z.object({
+  boardId: z.string().min(1).max(100).optional(),
   title: z.string().min(1).max(500),
   description: z.string().max(10_000).optional(),
   status: taskStatusSchema.optional(),
@@ -313,6 +315,19 @@ const configSchema = z.object({
   proposalPolicy: z.enum(['confirm', 'auto']).optional(),
   defaultModel: z.string().max(100).optional(),
   defaultThinking: z.string().max(20).optional(),
+});
+
+const createBoardSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+});
+
+const updateBoardSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  order: z.number().int().min(0).optional(),
+});
+
+const reorderBoardsSchema = z.object({
+  boardIds: z.array(z.string().min(1)).min(1),
 });
 
 // ── Proposal schemas ─────────────────────────────────────────────────
@@ -384,6 +399,81 @@ function parseArray(value: string | string[] | undefined): string[] {
 
 // ── Routes ───────────────────────────────────────────────────────────
 
+// GET /api/kanban/boards
+app.get('/api/kanban/boards', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  const boards = await store.listBoards();
+  return c.json({ boards });
+});
+
+// POST /api/kanban/boards
+app.post('/api/kanban/boards', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  let body: unknown = {};
+  try {
+    const text = await c.req.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+  const parsed = createBoardSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'validation_error', details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }, 400);
+  }
+  const board = await store.createBoard(parsed.data);
+  return c.json(board, 201);
+});
+
+// PATCH /api/kanban/boards/:id
+app.patch('/api/kanban/boards/:id', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  let body: unknown = {};
+  try {
+    const text = await c.req.text();
+    if (text) body = JSON.parse(text);
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+  const parsed = updateBoardSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'validation_error', details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }, 400);
+  }
+  try {
+    const board = await store.updateBoard(c.req.param('id'), parsed.data);
+    return c.json(board);
+  } catch (err) {
+    return c.json({ error: 'not_found', details: err instanceof Error ? err.message : 'Board not found' }, 404);
+  }
+});
+
+// DELETE /api/kanban/boards/:id
+app.delete('/api/kanban/boards/:id', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  try {
+    await store.deleteBoard(c.req.param('id'));
+    return c.json({ ok: true });
+  } catch (err) {
+    return c.json({ error: 'delete_failed', details: err instanceof Error ? err.message : 'Delete failed' }, 409);
+  }
+});
+
+// POST /api/kanban/boards/reorder
+app.post('/api/kanban/boards/reorder', rateLimitGeneral, async (c) => {
+  const store = getKanbanStore();
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'validation_error', details: 'Invalid JSON body' }, 400);
+  }
+  const parsed = reorderBoardsSchema.safeParse(body);
+  if (!parsed.success) {
+    return c.json({ error: 'validation_error', details: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ') }, 400);
+  }
+  const boards = await store.reorderBoards(parsed.data.boardIds);
+  return c.json({ boards });
+});
+
 // GET /api/kanban/tasks
 app.get('/api/kanban/tasks', rateLimitGeneral, async (c) => {
   const store = getKanbanStore();
@@ -399,13 +489,14 @@ app.get('/api/kanban/tasks', rateLimitGeneral, async (c) => {
     : url.searchParams.get('priority[]') ? url.searchParams.getAll('priority[]') : undefined,
   ) as TaskPriority[];
 
+  const boardId = url.searchParams.get('boardId') || undefined;
   const assignee = url.searchParams.get('assignee') || undefined;
   const label = url.searchParams.get('label') || undefined;
   const q = url.searchParams.get('q') || undefined;
   const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : undefined;
   const offset = url.searchParams.get('offset') ? Number(url.searchParams.get('offset')) : undefined;
 
-  const result = await store.listTasks({ status, priority, assignee, label, q, limit, offset });
+  const result = await store.listTasks({ boardId, status, priority, assignee, label, q, limit, offset });
   return c.json(result);
 });
 
@@ -542,13 +633,17 @@ app.post('/api/kanban/tasks/:id/reorder', rateLimitGeneral, async (c) => {
 // GET /api/kanban/config
 app.get('/api/kanban/config', rateLimitGeneral, async (c) => {
   const store = getKanbanStore();
-  const config = await store.getConfig();
+  const url = new URL(c.req.url);
+  const boardId = url.searchParams.get('boardId') || undefined;
+  const config = await store.getConfig(boardId);
   return c.json(config);
 });
 
 // PUT /api/kanban/config
 app.put('/api/kanban/config', rateLimitGeneral, async (c) => {
   const store = getKanbanStore();
+  const url = new URL(c.req.url);
+  const boardId = url.searchParams.get('boardId') || undefined;
 
   let body: unknown;
   try {
@@ -565,7 +660,7 @@ app.put('/api/kanban/config', rateLimitGeneral, async (c) => {
     }, 400);
   }
 
-  const config = await store.updateConfig(parsed.data);
+  const config = await store.updateConfig(parsed.data, boardId);
   return c.json(config);
 });
 
@@ -770,7 +865,7 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     };
     // Use task's model, or board default. If neither is set, omit — OpenClaw
     // will use whatever default model the operator configured in openclaw.json.
-    const config = await store.getConfig();
+    const config = await store.getConfig(task.boardId);
     const model = task.model || config.defaultModel;
     if (model) spawnArgs.model = model;
     const thinking = task.thinking || config.defaultThinking;

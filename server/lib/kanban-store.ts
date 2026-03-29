@@ -81,6 +81,7 @@ export interface TaskRunLink {
 
 export interface KanbanTask {
   id: string;
+  boardId: string;
   title: string;
   description?: string;
   status: TaskStatus;
@@ -123,6 +124,16 @@ export interface KanbanBoardConfig {
   defaultThinking?: string;
 }
 
+
+export interface KanbanBoard {
+  id: string;
+  name: string;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+  config: KanbanBoardConfig;
+}
+
 // ── Proposals ────────────────────────────────────────────────────────
 
 export type ProposalStatus = 'pending' | 'approved' | 'rejected';
@@ -159,9 +170,10 @@ export class ProposalAlreadyResolvedError extends Error {
 }
 
 export interface StoreData {
+  boards: KanbanBoard[];
   tasks: KanbanTask[];
   proposals: KanbanProposal[];
-  config: KanbanBoardConfig;
+  config?: KanbanBoardConfig;
   meta: {
     schemaVersion: number;
     updatedAt: number;
@@ -181,6 +193,7 @@ export interface TaskListResult {
 // ── Filter options ───────────────────────────────────────────────────
 
 export interface TaskFilters {
+  boardId?: string;
   status?: TaskStatus[];
   priority?: TaskPriority[];
   assignee?: string;
@@ -223,7 +236,7 @@ export class InvalidTransitionError extends Error {
 
 // ── Constants ────────────────────────────────────────────────────────
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
@@ -271,12 +284,26 @@ const DEFAULT_CONFIG: KanbanBoardConfig = {
   proposalPolicy: 'confirm',
 };
 
-function emptyStore(): StoreData {
+const DEFAULT_BOARD_ID = 'general';
+
+function createDefaultBoard(now = Date.now(), config: KanbanBoardConfig = structuredClone(DEFAULT_CONFIG)): KanbanBoard {
   return {
+    id: DEFAULT_BOARD_ID,
+    name: 'General',
+    order: 0,
+    createdAt: now,
+    updatedAt: now,
+    config,
+  };
+}
+
+function emptyStore(): StoreData {
+  const now = Date.now();
+  return {
+    boards: [createDefaultBoard(now)],
     tasks: [],
     proposals: [],
-    config: structuredClone(DEFAULT_CONFIG),
-    meta: { schemaVersion: CURRENT_SCHEMA_VERSION, updatedAt: Date.now() },
+    meta: { schemaVersion: CURRENT_SCHEMA_VERSION, updatedAt: now },
   };
 }
 
@@ -344,12 +371,8 @@ export class KanbanStore {
   }
 
   private migrate(data: StoreData): StoreData {
-    // Future migrations go here, keyed on data.meta.schemaVersion
     if (!data.meta) {
       data.meta = { schemaVersion: CURRENT_SCHEMA_VERSION, updatedAt: Date.now() };
-    }
-    if (!data.config) {
-      data.config = structuredClone(DEFAULT_CONFIG);
     }
     if (!Array.isArray(data.tasks)) {
       data.tasks = [];
@@ -357,31 +380,48 @@ export class KanbanStore {
     if (!Array.isArray(data.proposals)) {
       data.proposals = [];
     }
-    // Backfill missing config fields from defaults
-    if (!data.config.columns || data.config.columns.length === 0) {
-      data.config.columns = structuredClone(DEFAULT_CONFIG.columns);
+
+    const normalizeConfig = (config?: KanbanBoardConfig): KanbanBoardConfig => {
+      const next = structuredClone(config ?? DEFAULT_CONFIG);
+      if (!next.columns || next.columns.length === 0) {
+        next.columns = structuredClone(DEFAULT_CONFIG.columns);
+      }
+      if (!next.defaults || !next.defaults.status) {
+        next.defaults = structuredClone(DEFAULT_CONFIG.defaults);
+      }
+      next.defaults.status = normalizeTaskStatus(next.defaults.status);
+      next.defaults.priority = normalizeTaskPriority(next.defaults.priority);
+      if (!next.proposalPolicy) next.proposalPolicy = 'confirm';
+      if (next.reviewRequired === undefined) next.reviewRequired = DEFAULT_CONFIG.reviewRequired;
+      if (next.allowDoneDragBypass === undefined) next.allowDoneDragBypass = DEFAULT_CONFIG.allowDoneDragBypass;
+      if (next.quickViewLimit === undefined) next.quickViewLimit = DEFAULT_CONFIG.quickViewLimit;
+      return next;
+    };
+
+    if (!Array.isArray(data.boards) || data.boards.length === 0) {
+      const legacyConfig = normalizeConfig(data.config);
+      const now = Date.now();
+      data.boards = [createDefaultBoard(now, legacyConfig)];
+      data.tasks = data.tasks.map((task) => ({ ...task, boardId: DEFAULT_BOARD_ID }));
+      delete data.config;
+    } else {
+      data.boards = data.boards
+        .map((board, index) => ({
+          ...board,
+          order: typeof board.order === 'number' ? board.order : index,
+          createdAt: typeof board.createdAt === 'number' ? board.createdAt : Date.now(),
+          updatedAt: typeof board.updatedAt === 'number' ? board.updatedAt : Date.now(),
+          config: normalizeConfig(board.config),
+        }))
+        .sort((a, b) => a.order - b.order);
     }
-    if (!data.config.defaults || !data.config.defaults.status) {
-      data.config.defaults = structuredClone(DEFAULT_CONFIG.defaults);
-    }
-    data.config.defaults.status = normalizeTaskStatus(data.config.defaults.status);
-    data.config.defaults.priority = normalizeTaskPriority(data.config.defaults.priority);
-    if (!data.config.proposalPolicy) {
-      data.config.proposalPolicy = 'confirm';
-    }
-    if (data.config.reviewRequired === undefined) {
-      data.config.reviewRequired = DEFAULT_CONFIG.reviewRequired;
-    }
-    if (data.config.allowDoneDragBypass === undefined) {
-      data.config.allowDoneDragBypass = DEFAULT_CONFIG.allowDoneDragBypass;
-    }
-    if (data.config.quickViewLimit === undefined) {
-      data.config.quickViewLimit = DEFAULT_CONFIG.quickViewLimit;
-    }
+
+    const fallbackBoardId = data.boards[0]?.id || DEFAULT_BOARD_ID;
     data.tasks = data.tasks.map((task) => {
       const childSessionKey = task.run?.childSessionKey ?? task.run?.sessionId;
       return {
         ...task,
+        boardId: typeof task.boardId === 'string' && task.boardId ? task.boardId : fallbackBoardId,
         status: normalizeTaskStatus(task.status),
         priority: normalizeTaskPriority(task.priority),
         run: task.run
@@ -478,6 +518,87 @@ export class KanbanStore {
     return this.withLock(fn);
   }
 
+  private getBoardOrDefault(data: StoreData, boardId?: string): KanbanBoard {
+    if (boardId) {
+      const match = data.boards.find((board) => board.id === boardId);
+      if (match) return match;
+    }
+    return data.boards.slice().sort((a, b) => a.order - b.order)[0];
+  }
+
+  // ── Boards ───────────────────────────────────────────────────────
+
+  async listBoards(): Promise<KanbanBoard[]> {
+    return this.withStore(async () => {
+      const data = await this.readRaw();
+      return data.boards.slice().sort((a, b) => a.order - b.order);
+    });
+  }
+
+  async createBoard(input: { name?: string }): Promise<KanbanBoard> {
+    return this.withStore(async () => {
+      const data = await this.readRaw();
+      const now = Date.now();
+      const name = input.name?.trim() || `Board ${data.boards.length + 1}`;
+      const order = data.boards.reduce((max, board) => Math.max(max, board.order), -1) + 1;
+      const baseId = slugify(name, 40) || 'board';
+      const existing = new Set(data.boards.map((board) => board.id));
+      let id = baseId;
+      let counter = 2;
+      while (existing.has(id)) {
+        id = `${baseId}-${counter++}`;
+      }
+      const templateConfig = structuredClone(this.getBoardOrDefault(data).config);
+      const board: KanbanBoard = { id, name, order, createdAt: now, updatedAt: now, config: templateConfig };
+      data.boards.push(board);
+      await this.writeRaw(data);
+      return board;
+    });
+  }
+
+  async updateBoard(id: string, patch: Partial<Pick<KanbanBoard, 'name' | 'order'>>): Promise<KanbanBoard> {
+    return this.withStore(async () => {
+      const data = await this.readRaw();
+      const board = data.boards.find((entry) => entry.id === id);
+      if (!board) throw new Error(`Board not found: ${id}`);
+      if (typeof patch.name === 'string' && patch.name.trim()) board.name = patch.name.trim();
+      if (typeof patch.order === 'number') board.order = patch.order;
+      board.updatedAt = Date.now();
+      data.boards.sort((a, b) => a.order - b.order).forEach((entry, index) => { entry.order = index; });
+      await this.writeRaw(data);
+      return board;
+    });
+  }
+
+  async deleteBoard(id: string): Promise<void> {
+    return this.withStore(async () => {
+      const data = await this.readRaw();
+      if (data.boards.length <= 1) {
+        throw new Error('Cannot delete the last board');
+      }
+      const boardIndex = data.boards.findIndex((entry) => entry.id === id);
+      if (boardIndex === -1) throw new Error(`Board not found: ${id}`);
+      data.boards.splice(boardIndex, 1);
+      data.tasks = data.tasks.filter((task) => task.boardId !== id);
+      data.boards.sort((a, b) => a.order - b.order).forEach((entry, index) => { entry.order = index; });
+      await this.writeRaw(data);
+    });
+  }
+
+  async reorderBoards(boardIds: string[]): Promise<KanbanBoard[]> {
+    return this.withStore(async () => {
+      const data = await this.readRaw();
+      const orderMap = new Map(boardIds.map((id, index) => [id, index]));
+      data.boards.forEach((board, index) => {
+        board.order = orderMap.get(board.id) ?? index;
+        board.updatedAt = Date.now();
+      });
+      data.boards.sort((a, b) => a.order - b.order).forEach((entry, index) => { entry.order = index; });
+      await this.writeRaw(data);
+      return data.boards;
+    });
+  }
+
   // ── Tasks: List ──────────────────────────────────────────────────
 
   async listTasks(filters: TaskFilters = {}): Promise<TaskListResult> {
@@ -486,6 +607,9 @@ export class KanbanStore {
       let tasks = data.tasks;
 
       // Apply filters
+      if (filters.boardId) {
+        tasks = tasks.filter((t) => t.boardId === filters.boardId);
+      }
       if (filters.status?.length) {
         const set = new Set(filters.status);
         tasks = tasks.filter((t) => set.has(t.status));
@@ -542,6 +666,7 @@ export class KanbanStore {
   // ── Tasks: Create ────────────────────────────────────────────────
 
   async createTask(input: {
+    boardId?: string;
     title: string;
     description?: string;
     status?: TaskStatus;
@@ -558,20 +683,23 @@ export class KanbanStore {
     return this.withStore(async () => {
       const data = await this.readRaw();
 
+      const board = this.getBoardOrDefault(data, input.boardId);
+
       // Compute columnOrder — append to end of target column
-      const targetStatus = input.status ?? data.config.defaults.status;
+      const targetStatus = input.status ?? board.config.defaults.status;
       const maxOrder = data.tasks
-        .filter((t) => t.status === targetStatus)
+        .filter((t) => t.boardId === board.id && t.status === targetStatus)
         .reduce((max, t) => Math.max(max, t.columnOrder), -1);
 
       const now = Date.now();
       const existingIds = new Set(data.tasks.map((t) => t.id));
       const task: KanbanTask = {
         id: uniqueSlugId(input.title, existingIds),
+        boardId: board.id,
         title: input.title,
         description: input.description,
         status: targetStatus,
-        priority: input.priority ?? data.config.defaults.priority,
+        priority: input.priority ?? board.config.defaults.priority,
         createdBy: input.createdBy,
         createdAt: now,
         updatedAt: now,
@@ -638,7 +766,7 @@ export class KanbanStore {
       // If status changed, re-compute columnOrder (append to end of new column)
       if (patch.status && patch.status !== task.status) {
         const maxOrder = data.tasks
-          .filter((t) => t.status === patch.status && t.id !== id)
+          .filter((t) => t.boardId === task.boardId && t.status === patch.status && t.id !== id)
           .reduce((max, t) => Math.max(max, t.columnOrder), -1);
         updated.columnOrder = maxOrder + 1;
       }
@@ -693,7 +821,7 @@ export class KanbanStore {
 
       // Get all tasks in target column (excluding the task being moved)
       const columnTasks = data.tasks
-        .filter((t) => t.status === targetStatus && t.id !== id)
+        .filter((t) => t.boardId === task.boardId && t.status === targetStatus && t.id !== id)
         .sort((a, b) => a.columnOrder - b.columnOrder);
 
       // Clamp index
@@ -729,22 +857,24 @@ export class KanbanStore {
 
   // ── Config ───────────────────────────────────────────────────────
 
-  async getConfig(): Promise<KanbanBoardConfig> {
+  async getConfig(boardId?: string): Promise<KanbanBoardConfig> {
     return this.withStore(async () => {
       const data = await this.readRaw();
-      return data.config;
+      return this.getBoardOrDefault(data, boardId).config;
     });
   }
 
-  async updateConfig(patch: Partial<KanbanBoardConfig>): Promise<KanbanBoardConfig> {
+  async updateConfig(patch: Partial<KanbanBoardConfig>, boardId?: string): Promise<KanbanBoardConfig> {
     return this.withStore(async () => {
       const data = await this.readRaw();
-      data.config = { ...data.config, ...patch };
-      if (patch.columns) data.config.columns = patch.columns;
-      if (patch.defaults) data.config.defaults = { ...data.config.defaults, ...patch.defaults };
+      const board = this.getBoardOrDefault(data, boardId);
+      board.config = { ...board.config, ...patch };
+      if (patch.columns) board.config.columns = patch.columns;
+      if (patch.defaults) board.config.defaults = { ...board.config.defaults, ...patch.defaults };
+      board.updatedAt = Date.now();
       await this.writeRaw(data);
-      await this.audit({ ts: Date.now(), action: 'config_update' });
-      return data.config;
+      await this.audit({ ts: Date.now(), action: 'config_update', detail: `board=${board.id}` });
+      return board.config;
     });
   }
 
@@ -1135,8 +1265,10 @@ export class KanbanStore {
         version: 1,
       };
 
+      const proposalBoard = this.getBoardOrDefault(data, typeof input.payload.boardId === 'string' ? input.payload.boardId : undefined);
+
       // In auto mode, immediately execute the proposal
-      if (data.config.proposalPolicy === 'auto') {
+      if (proposalBoard.config.proposalPolicy === 'auto') {
         if (input.type === 'create') {
           const task = await this._createTaskUnlocked(data, input.payload, input.proposedBy);
           proposal.status = 'approved';
@@ -1234,9 +1366,10 @@ export class KanbanStore {
     payload: Record<string, unknown>,
     proposedBy: TaskActor,
   ): Promise<KanbanTask> {
-    const targetStatus = (payload.status as TaskStatus) ?? data.config.defaults.status;
+    const board = this.getBoardOrDefault(data, typeof payload.boardId === 'string' ? payload.boardId : undefined);
+    const targetStatus = (payload.status as TaskStatus) ?? board.config.defaults.status;
     const maxOrder = data.tasks
-      .filter((t) => t.status === targetStatus)
+      .filter((t) => t.boardId === board.id && t.status === targetStatus)
       .reduce((max, t) => Math.max(max, t.columnOrder), -1);
 
     const now = Date.now();
@@ -1244,10 +1377,11 @@ export class KanbanStore {
     const title = typeof payload.title === 'string' && payload.title ? payload.title : 'untitled';
     const task: KanbanTask = {
       id: uniqueSlugId(title, existingIds),
+      boardId: board.id,
       title,
       description: payload.description as string | undefined,
       status: targetStatus,
-      priority: (payload.priority as TaskPriority) ?? data.config.defaults.priority,
+      priority: (payload.priority as TaskPriority) ?? board.config.defaults.priority,
       createdBy: proposedBy,
       createdAt: now,
       updatedAt: now,
@@ -1291,7 +1425,7 @@ export class KanbanStore {
     // If status changed, re-compute columnOrder
     if (patch.status && patch.status !== task.status) {
       const maxOrder = data.tasks
-        .filter((t) => t.status === (patch.status as TaskStatus) && t.id !== taskId)
+        .filter((t) => t.boardId === task.boardId && t.status === (patch.status as TaskStatus) && t.id !== taskId)
         .reduce((max, t) => Math.max(max, t.columnOrder), -1);
       patch.columnOrder = maxOrder + 1;
     }

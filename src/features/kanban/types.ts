@@ -18,6 +18,34 @@ export const COLUMN_LABELS: Record<TaskStatus, string> = {
 };
 export type TaskActor = 'operator' | `agent:${string}`;
 
+export interface KanbanBoardConfig {
+  columns: Array<{
+    key: TaskStatus;
+    title: string;
+    wipLimit?: number;
+    visible: boolean;
+  }>;
+  defaults: {
+    status: TaskStatus;
+    priority: TaskPriority;
+  };
+  reviewRequired: boolean;
+  allowDoneDragBypass: boolean;
+  quickViewLimit: number;
+  proposalPolicy: 'confirm' | 'auto';
+  defaultModel?: string;
+  defaultThinking?: string;
+}
+
+export interface KanbanBoard {
+  id: string;
+  name: string;
+  order: number;
+  createdAt: number;
+  updatedAt: number;
+  config: KanbanBoardConfig;
+}
+
 export interface TaskFeedback {
   at: number;
   by: TaskActor;
@@ -36,6 +64,7 @@ export interface TaskRunLink {
 
 export interface KanbanTask {
   id: string;
+  boardId: string;
   title: string;
   description?: string;
   status: TaskStatus;

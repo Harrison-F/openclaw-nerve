@@ -21,6 +21,12 @@ interface KanbanPanelProps {
 export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPanelProps = {}) {
   const {
     tasks,
+    boards,
+    activeBoard,
+    activeBoardId,
+    setActiveBoardId,
+    createBoard,
+    renameBoard,
     loading,
     error,
     filters,
@@ -97,6 +103,11 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
     <div className="flex-1 flex flex-col min-h-0 bg-background">
       {/* Header with search, filters, stats, + New Task */}
       <KanbanHeader
+        boards={boards}
+        activeBoardId={activeBoardId}
+        onSelectBoard={setActiveBoardId}
+        onCreateBoard={async () => { await createBoard(); }}
+        onRenameBoard={async (boardId, name) => { await renameBoard(boardId, name); }}
         filters={filters}
         onFiltersChange={setFilters}
         statusCounts={statusCounts}
@@ -126,6 +137,8 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreate={handleCreate}
+        boardName={activeBoard?.name ?? 'General'}
+        boardConfig={activeBoard?.config ?? null}
       />
 
       {/* Task Detail Drawer */}

@@ -1,7 +1,7 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { Filter, Plus, X, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import type { TaskStatus, TaskPriority } from './types';
+import type { KanbanBoard, TaskStatus, TaskPriority } from './types';
 import type { KanbanFilters } from './hooks/useKanban';
 import { ProposalInbox } from './ProposalInbox';
 import type { KanbanProposal } from './hooks/useProposals';
@@ -48,6 +48,11 @@ function FilterPill({
 }
 
 interface KanbanHeaderProps {
+  boards: KanbanBoard[];
+  activeBoardId: string;
+  onSelectBoard: (boardId: string) => void;
+  onCreateBoard: () => void;
+  onRenameBoard: (boardId: string, name: string) => Promise<void> | void;
   filters: KanbanFilters;
   onFiltersChange: (filters: KanbanFilters) => void;
   statusCounts: Record<TaskStatus, number>;
@@ -59,6 +64,11 @@ interface KanbanHeaderProps {
 }
 
 export const KanbanHeader = memo(function KanbanHeader({
+  boards,
+  activeBoardId,
+  onSelectBoard,
+  onCreateBoard,
+  onRenameBoard,
   filters,
   onFiltersChange,
   statusCounts,
@@ -71,9 +81,12 @@ export const KanbanHeader = memo(function KanbanHeader({
   const [showFilters, setShowFilters] = useState(false);
   const [showInbox, setShowInbox] = useState(false);
   const [searchValue, setSearchValue] = useState(filters.q);
+  const [renamingBoardId, setRenamingBoardId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const filtersRef = useRef(filters);
   const inboxRef = useRef<HTMLDivElement>(null);
+  const renameInputRef = useRef<HTMLInputElement>(null);
 
   /* Keep filtersRef in sync (avoids stale closures in debounced search) */
   useEffect(() => { filtersRef.current = filters; });
@@ -104,6 +117,12 @@ export const KanbanHeader = memo(function KanbanHeader({
     return () => clearTimeout(debounceRef.current);
   }, []);
 
+  useEffect(() => {
+    if (!renamingBoardId) return;
+    const timer = setTimeout(() => renameInputRef.current?.focus(), 0);
+    return () => clearTimeout(timer);
+  }, [renamingBoardId]);
+
   const togglePriority = useCallback((p: TaskPriority) => {
     const current = filters.priority;
     const next = current.includes(p) ? current.filter(x => x !== p) : [...current, p];
@@ -115,6 +134,25 @@ export const KanbanHeader = memo(function KanbanHeader({
     setSearchValue('');
     onFiltersChange({ q: '', priority: [], assignee: '', labels: [] });
   }, [onFiltersChange]);
+
+  const activeBoard = boards.find((board) => board.id === activeBoardId) ?? boards[0] ?? null;
+
+  const startRenamingBoard = useCallback((board: KanbanBoard | null) => {
+    if (!board) return;
+    setRenamingBoardId(board.id);
+    setRenameValue(board.name);
+  }, []);
+
+  const commitBoardRename = useCallback(async () => {
+    if (!renamingBoardId) return;
+    const nextName = renameValue.trim();
+    const board = boards.find((entry) => entry.id === renamingBoardId);
+    if (board && nextName && nextName !== board.name) {
+      await onRenameBoard(renamingBoardId, nextName);
+    }
+    setRenamingBoardId(null);
+    setRenameValue('');
+  }, [boards, onRenameBoard, renameValue, renamingBoardId]);
 
   const hasActiveFilters = filters.q || filters.priority.length > 0 || filters.assignee || filters.labels.length > 0;
 
@@ -129,13 +167,64 @@ export const KanbanHeader = memo(function KanbanHeader({
             Task board
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-semibold tracking-[-0.03em] text-foreground">Tasks</h1>
+            {renamingBoardId === activeBoard?.id ? (
+              <input
+                ref={renameInputRef}
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onBlur={() => { void commitBoardRename(); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); void commitBoardRename(); }
+                  if (e.key === 'Escape') { setRenamingBoardId(null); setRenameValue(''); }
+                }}
+                className="min-w-[180px] rounded-xl border border-border/70 bg-background/70 px-3 py-1.5 text-lg font-semibold tracking-[-0.03em] text-foreground outline-none"
+              />
+            ) : (
+              <h1
+                className="cursor-text text-lg font-semibold tracking-[-0.03em] text-foreground"
+                onDoubleClick={() => startRenamingBoard(activeBoard)}
+                title="Double-click to rename board"
+              >
+                {activeBoard?.name ?? 'General'}
+              </h1>
+            )}
             <div className="hidden sm:flex items-center gap-1.5">
               <StatChip label="To Do" count={statusCounts.todo} status="todo" />
               <StatChip label="In Progress" count={statusCounts['in-progress']} status="in-progress" />
               <StatChip label="Review" count={statusCounts.review} status="review" />
               <StatChip label="Done" count={statusCounts.done} status="done" />
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 overflow-x-auto pb-1">
+            {boards.map((board) => (
+              renamingBoardId === board.id ? (
+                <input
+                  key={board.id}
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={() => { void commitBoardRename(); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { e.preventDefault(); void commitBoardRename(); }
+                    if (e.key === 'Escape') { setRenamingBoardId(null); setRenameValue(''); }
+                  }}
+                  className="h-9 min-w-[120px] rounded-full border border-primary/40 bg-primary/10 px-3 text-[0.733rem] font-semibold text-foreground outline-none"
+                />
+              ) : (
+                <button
+                  key={board.id}
+                  type="button"
+                  onClick={() => onSelectBoard(board.id)}
+                  onDoubleClick={() => startRenamingBoard(board)}
+                  className={`h-9 rounded-full border px-3 text-[0.733rem] font-semibold transition-colors ${board.id === activeBoardId ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/70 bg-background/40 text-muted-foreground hover:text-foreground'}`}
+                >
+                  {board.name}
+                </button>
+              )
+            ))}
+            <Button variant="outline" size="sm" onClick={onCreateBoard} className="h-9 rounded-full px-3 text-[0.733rem]">
+              <Plus size={14} />
+              Board
+            </Button>
           </div>
         </div>
 

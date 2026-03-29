@@ -10,15 +10,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import type { TaskStatus, TaskPriority } from './types';
+import type { KanbanBoardConfig, TaskStatus, TaskPriority } from './types';
 import type { CreateTaskPayload } from './hooks/useKanban';
-
-const STATUS_OPTIONS: { value: TaskStatus; label: string }[] = [
-  { value: 'backlog', label: 'Backlog' },
-  { value: 'todo', label: 'To Do' },
-  { value: 'in-progress', label: 'In Progress' },
-  { value: 'review', label: 'Review' },
-];
 
 const PRIORITY_OPTIONS: { value: TaskPriority; label: string }[] = [
   { value: 'critical', label: 'Critical' },
@@ -31,13 +24,15 @@ interface CreateTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreate: (payload: CreateTaskPayload) => Promise<void>;
+  boardName?: string;
+  boardConfig?: KanbanBoardConfig | null;
 }
 
-export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDialogProps) {
+export function CreateTaskDialog({ open, onOpenChange, onCreate, boardName = 'General', boardConfig = null }: CreateTaskDialogProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState<TaskStatus>('todo');
-  const [priority, setPriority] = useState<TaskPriority>('normal');
+  const [status, setStatus] = useState<TaskStatus>(boardConfig?.defaults.status ?? 'todo');
+  const [priority, setPriority] = useState<TaskPriority>(boardConfig?.defaults.priority ?? 'normal');
   const [labelsRaw, setLabelsRaw] = useState('');
   const [assignee, setAssignee] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -58,8 +53,8 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
     if (!open) {
       setTitle('');
       setDescription('');
-      setStatus('todo');
-      setPriority('normal');
+      setStatus(boardConfig?.defaults.status ?? 'todo');
+      setPriority(boardConfig?.defaults.priority ?? 'normal');
       setLabelsRaw('');
       setAssignee('');
       setError(null);
@@ -101,6 +96,13 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
     }
   }, [handleSubmit]);
 
+  const statusOptions = (boardConfig?.columns ?? [
+    { key: 'backlog', title: 'Backlog', visible: true },
+    { key: 'todo', title: 'To Do', visible: true },
+    { key: 'in-progress', title: 'In Progress', visible: true },
+    { key: 'review', title: 'Review', visible: true },
+  ]).filter((column) => column.visible);
+
   const selectClass = 'cockpit-select h-11 text-sm';
 
   return (
@@ -109,7 +111,7 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
         <DialogHeader>
           <div className="cockpit-kicker">
             <span className="text-primary">◆</span>
-            Task Board
+            {boardName}
           </div>
           <DialogTitle className="text-[1.4rem] font-semibold tracking-[-0.03em] text-foreground">Create task</DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">Capture the work, set the lane, and leave the board readable for the next handoff.</DialogDescription>
@@ -169,8 +171,8 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate }: CreateTaskDia
               onChange={e => setStatus(e.target.value as TaskStatus)}
               className={selectClass}
             >
-              {STATUS_OPTIONS.map(o => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+              {statusOptions.map((o) => (
+                <option key={o.key} value={o.key}>{o.title}</option>
               ))}
             </select>
           </div>
