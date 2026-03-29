@@ -16,6 +16,7 @@ import {
   Suspense,
 } from 'react';
 import { AlertTriangle, CheckCircle2, RotateCw, PlugZap, Mic, Loader2, Square } from 'lucide-react';
+import type { SearchMatchTarget } from '@/features/chat/useMessageSearch';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
 import { useChat } from '@/contexts/ChatContext';
@@ -406,6 +407,7 @@ export default function App({ onLogout }: AppProps) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
+  const [chatSearchTarget, setChatSearchTarget] = useState<{ sessionKey: string; requestId: number; target: SearchMatchTarget } | null>(null);
 
   // View mode state (chat | kanban), persisted to localStorage
   const [viewMode, setViewModeRaw] = useState<ViewMode>(() => {
@@ -455,7 +457,10 @@ export default function App({ onLogout }: AppProps) {
   const openSettings = useCallback(() => setSettingsOpen(true), []);
   const openSearch = useCallback(() => setSearchOpen(true), []);
   const closeSettings = useCallback(() => setSettingsOpen(false), []);
-  const closeSearch = useCallback(() => setSearchOpen(false), []);
+  const closeSearch = useCallback(() => {
+    setSearchOpen(false);
+    setChatSearchTarget(null);
+  }, []);
   const closePalette = useCallback(() => setPaletteOpen(false), []);
 
   const openSpawnDialog = useCallback(() => setSpawnDialogOpen(true), []);
@@ -531,6 +536,26 @@ export default function App({ onLogout }: AppProps) {
     if (!currentSession) return;
     await renameSession(currentSession, nextTitle);
   }, [currentSession, renameSession]);
+
+  const handleSelectChatSearchResult = useCallback(async (
+    sessionKey: string,
+    result: { targetMessageText?: string; kind: 'title' | 'content' },
+    query: string,
+  ) => {
+    setCurrentSession(sessionKey);
+    if (result.kind === 'content' && result.targetMessageText && query.trim()) {
+      setChatSearchTarget({
+        sessionKey,
+        requestId: Date.now(),
+        target: { query, targetText: result.targetMessageText },
+      });
+      setSearchOpen(true);
+      return;
+    }
+
+    setChatSearchTarget(null);
+    setSearchOpen(false);
+  }, [setCurrentSession]);
 
   const contextTokens = currentSessionData?.totalTokens ?? 0;
   const contextLimit = currentSessionData?.contextTokens || getContextLimit(model);
@@ -616,6 +641,7 @@ export default function App({ onLogout }: AppProps) {
   }, [discardAllDirtyFiles, pendingWorkspaceSwitch, workspaceSwitchAction]);
 
   const handleSessionChange = useCallback((key: string) => {
+    setChatSearchTarget(null);
     void requestWorkspaceTransition(key, getWorkspaceSwitchLabel(key), async () => {
       setCurrentSession(key);
     });
@@ -776,6 +802,10 @@ export default function App({ onLogout }: AppProps) {
     ? saveToast
     : null;
 
+  const activeChatSearchTarget = chatSearchTarget && chatSearchTarget.sessionKey === currentSession
+    ? chatSearchTarget
+    : null;
+
   const chatContent = (
     <TabbedContentArea
       activeTab={activeTab}
@@ -817,6 +847,7 @@ export default function App({ onLogout }: AppProps) {
             onToggleMobileTopBar={isCompactLayout ? toggleMobileTopBar : undefined}
             isMobileTopBarHidden={isMobileTopBarHidden}
             onOpenWorkspacePath={openWorkspacePath}
+            searchTarget={activeChatSearchTarget}
             voiceState={voiceState}
             interimTranscript={interimTranscript}
             startRecording={handleStartPersistentRecording}
@@ -844,6 +875,7 @@ export default function App({ onLogout }: AppProps) {
             agentStatus={agentStatus}
             unreadSessions={unreadSessions}
             onSelect={onSelect}
+            onSelectSearchResult={handleSelectChatSearchResult}
             onRefresh={refreshSessions}
             onDelete={deleteSession}
             onSpawn={handleSpawnSession}
@@ -868,6 +900,7 @@ export default function App({ onLogout }: AppProps) {
           agentStatus={agentStatus}
           unreadSessions={unreadSessions}
           onSelect={handleSessionChange}
+          onSelectSearchResult={handleSelectChatSearchResult}
           onRefresh={refreshSessions}
           onDelete={deleteSession}
           onSpawn={handleSpawnSession}
@@ -1175,7 +1208,6 @@ export default function App({ onLogout }: AppProps) {
       <div className="boot-panel" style={{ transitionDelay: '200ms' }}>
         <StatusBar
           connectionState={connectionState}
-          sessionCount={sessions.length}
           sparkline={sparkline}
           contextTokens={contextTokens}
           contextLimit={contextLimit}

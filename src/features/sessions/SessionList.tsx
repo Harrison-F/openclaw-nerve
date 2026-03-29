@@ -4,7 +4,7 @@ import { getSessionKey } from '@/types';
 import type { SpawnSessionOpts } from '@/contexts/SessionContext';
 import { SessionSkeletonGroup } from '@/components/skeletons';
 import { useGateway } from '@/contexts/GatewayContext';
-import { extractText } from '@/utils/helpers';
+import { processChatMessages } from '@/features/chat/operations';
 import { buildSessionTree, flattenTree, getSessionType } from './sessionTree';
 import { getSessionDisplayLabel, isTopLevelAgentSessionKey } from './sessionKeys';
 import { SessionNode } from './SessionNode';
@@ -29,6 +29,7 @@ interface SessionListProps {
   agentStatus?: Record<string, GranularAgentState>;
   unreadSessions?: Record<string, boolean>;
   onSelect: (key: string) => void;
+  onSelectSearchResult?: (sessionKey: string, result: SessionSearchResult, query: string) => void;
   onRefresh: () => void;
   onDelete?: (sessionKey: string) => Promise<void>;
   onSpawn?: (opts: SpawnSessionOpts) => Promise<void | boolean>;
@@ -46,6 +47,7 @@ type SessionSearchResult = {
   sessionKey: string;
   kind: 'title' | 'content';
   snippet?: string;
+  targetMessageText?: string;
 };
 
 function countDescendants(node: ReturnType<typeof buildSessionTree>[number]): number {
@@ -66,29 +68,39 @@ function normalizeSearchValue(value: string): string {
   return value.trim().toLocaleLowerCase();
 }
 
-function buildSearchSnippet(messages: ChatMessage[], query: string): string | null {
+function buildSearchSnippet(messages: ChatMessage[], query: string): { snippet: string; targetMessageText: string } | null {
   const normalizedQuery = normalizeSearchValue(query);
   if (!normalizedQuery) return null;
 
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const text = extractText(messages[index]).replace(/\s+/g, ' ').trim();
-    if (!text) continue;
-    const normalizedText = text.toLocaleLowerCase();
+  const searchableMessages = processChatMessages(messages)
+    .filter((msg) => {
+      if (msg.role === 'user') return true;
+      if (msg.role !== 'assistant') return false;
+      return !msg.intermediate && !msg.isThinking;
+    });
+
+  for (let index = searchableMessages.length - 1; index >= 0; index -= 1) {
+    const rawText = searchableMessages[index].rawText.replace(/\s+/g, ' ').trim();
+    if (!rawText) continue;
+    const normalizedText = rawText.toLocaleLowerCase();
     const matchIndex = normalizedText.indexOf(normalizedQuery);
     if (matchIndex === -1) continue;
 
     const start = Math.max(0, matchIndex - 42);
-    const end = Math.min(text.length, matchIndex + normalizedQuery.length + 78);
+    const end = Math.min(rawText.length, matchIndex + normalizedQuery.length + 78);
     const prefix = start > 0 ? '…' : '';
-    const suffix = end < text.length ? '…' : '';
-    return `${prefix}${text.slice(start, end).trim()}${suffix}`;
+    const suffix = end < rawText.length ? '…' : '';
+    return {
+      snippet: `${prefix}${rawText.slice(start, end).trim()}${suffix}`,
+      targetMessageText: searchableMessages[index].rawText,
+    };
   }
 
   return null;
 }
 
 /** Sidebar list of agent sessions with tree structure and context menus. */
-export function SessionList({ displayMode = 'session', sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
+export function SessionList({ displayMode = 'session', sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onSelectSearchResult, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
   const { connectionState, rpc } = useGateway();
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -98,7 +110,7 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [expandedState, setExpandedState] = useState<Record<string, boolean>>({});
   const [searchOpen, setSearchOpen] = useState(false);
-  const [searchMode, setSearchMode] = useState<SearchMode>('titles');
+  const [searchMode, setSearchMode] = useState<SearchMode>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Record<string, SessionSearchResult>>({});
   const [searchLoading, setSearchLoading] = useState(false);
@@ -252,9 +264,14 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
             }
           }
 
-          const snippet = buildSearchSnippet(messages || [], normalizedSearchQuery);
-          if (snippet) {
-            contentMatches.set(sessionKey, { sessionKey, kind: 'content', snippet });
+          const match = buildSearchSnippet(messages || [], normalizedSearchQuery);
+          if (match) {
+            contentMatches.set(sessionKey, {
+              sessionKey,
+              kind: 'content',
+              snippet: match.snippet,
+              targetMessageText: match.targetMessageText,
+            });
           }
         }
 
@@ -418,7 +435,13 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
               <button
                 key={sessionKey}
                 type="button"
-                onClick={() => onSelect(sessionKey)}
+                onClick={() => {
+                  if (searchResult && onSelectSearchResult) {
+                    onSelectSearchResult(sessionKey, searchResult, searchQuery);
+                    return;
+                  }
+                  onSelect(sessionKey);
+                }}
                 className={`w-full border-b border-border/40 px-3 py-2 text-left transition-colors hover:bg-secondary ${isActive ? 'border-l-[3px] border-l-primary bg-primary/5' : ''}`}
               >
                 <div className="flex items-center gap-2">

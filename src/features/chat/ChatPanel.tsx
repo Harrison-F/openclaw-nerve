@@ -5,7 +5,7 @@ import { MessageBubble } from './MessageBubble';
 import { InputBar, type InputBarHandle } from './InputBar';
 import type { VoiceState } from '@/features/voice/useVoiceInput';
 import { SearchBar } from './SearchBar';
-import { useMessageSearch } from './useMessageSearch';
+import { useMessageSearch, type SearchMatchTarget } from './useMessageSearch';
 import { ActivityLog, ChatHeader, ProcessingIndicator, ScrollToBottomButton, StreamingMessage, ToolGroupBlock } from './components';
 import { isMessageCollapsible } from './types';
 import type { ChatMsg, ImageAttachment } from './types';
@@ -48,6 +48,7 @@ interface ChatPanelProps {
   isMobileTopBarHidden?: boolean;
   /** Open or reveal a safe workspace path in the file explorer/editor. */
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
+  searchTarget?: { requestId: number; target: SearchMatchTarget } | null;
   voiceState: VoiceState;
   interimTranscript: string;
   startRecording: () => Promise<void> | void;
@@ -74,6 +75,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onOpenWorkspacePath,
+  searchTarget = null,
   voiceState,
   interimTranscript,
   startRecording,
@@ -170,6 +172,12 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
     search.close();
     onSearchClose?.();
   }, [search, onSearchClose]);
+
+  useEffect(() => {
+    if (!searchTarget) return;
+    if (!messages.length) return;
+    search.openTarget(searchTarget.target);
+  }, [messages, search, searchTarget]);
 
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current && autoScroll) {

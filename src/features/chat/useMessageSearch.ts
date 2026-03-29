@@ -19,6 +19,11 @@ export interface MessageMatch {
   message: ChatMsg;
 }
 
+export interface SearchMatchTarget {
+  query: string;
+  targetText?: string | null;
+}
+
 export interface UseMessageSearchReturn {
   // State
   query: string;
@@ -38,6 +43,7 @@ export interface UseMessageSearchReturn {
   open: () => void;
   close: () => void;
   clear: () => void;
+  openTarget: (target: SearchMatchTarget) => void;
 }
 
 /** Hook providing full-text search across chat messages with match navigation. */
@@ -108,6 +114,31 @@ export function useMessageSearch(messages: ChatMsg[]): UseMessageSearchReturn {
     setCurrentMatchIndex(0);
   }, []);
 
+  const openTarget = useCallback((target: SearchMatchTarget) => {
+    const queryText = target.query || '';
+    setIsActive(true);
+    setQueryState(queryText);
+
+    if (!queryText.trim()) {
+      setCurrentMatchIndex(0);
+      return;
+    }
+
+    const normalizedQuery = queryText.toLowerCase();
+    const normalizedTargetText = target.targetText?.trim().toLowerCase();
+
+    const matchingMessageIndices = messages
+      .map((msg, index) => ({ msg, index }))
+      .filter(({ msg }) => msg.rawText.toLowerCase().includes(normalizedQuery));
+
+    const nextMatchIndex = matchingMessageIndices.findIndex(({ msg }) => {
+      if (!normalizedTargetText) return true;
+      return msg.rawText.trim().toLowerCase() === normalizedTargetText;
+    });
+
+    setCurrentMatchIndex(nextMatchIndex >= 0 ? nextMatchIndex : 0);
+  }, [messages]);
+
   return {
     query,
     isActive,
@@ -122,5 +153,6 @@ export function useMessageSearch(messages: ChatMsg[]): UseMessageSearchReturn {
     open,
     close,
     clear,
+    openTarget,
   };
 }
