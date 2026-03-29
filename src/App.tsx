@@ -40,7 +40,7 @@ import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
 import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
-import { buildAgentRootSessionKey, getSessionDisplayLabel } from '@/features/sessions/sessionKeys';
+import { buildAgentRootSessionKey, getSessionDisplayLabel, getTopLevelAgentSessions } from '@/features/sessions/sessionKeys';
 import { shouldGuardWorkspaceSwitch } from '@/features/workspace/workspaceSwitchGuard';
 import { getWorkspaceAgentId, getWorkspaceRootSessionKey } from '@/features/workspace/workspaceScope';
 
@@ -50,8 +50,6 @@ const CommandPalette = lazy(() => import('@/features/command-palette/CommandPale
 
 // Lazy-loaded side panels
 const SessionList = lazy(() => import('@/features/sessions/SessionList').then(m => ({ default: m.SessionList })));
-const WorkspacePanel = lazy(() => import('@/features/workspace/WorkspacePanel').then(m => ({ default: m.WorkspacePanel })));
-
 // Lazy-loaded view modes
 const KanbanPanel = lazy(() => import('@/features/kanban/KanbanPanel').then(m => ({ default: m.KanbanPanel })));
 
@@ -65,6 +63,11 @@ interface PendingWorkspaceSwitch {
   resolve: (didSwitch: boolean) => void;
   reject: (error: unknown) => void;
 }
+
+const CHAT_VISIBILITY_STORAGE_KEY = 'nerve-visible-chat-session-keys-v1';
+const CHAT_HISTORY_WIDTH_MIGRATION_KEY = 'nerve-chat-history-width-migrated-v2';
+const DEFAULT_CHAT_HISTORY_PANEL_RATIO = 50;
+const DEFAULT_CHAT_HISTORY_WIDTH_PX = 220;
 
 function buildWorkspaceSwitchErrorMessage(result: {
   failedPath?: string;
@@ -187,6 +190,8 @@ export default function App({ onLogout }: AppProps) {
   }, [setFileBrowserCollapsed]);
 
   const workspaceAgentId = useMemo(() => getWorkspaceAgentId(currentSession), [currentSession]);
+  const [visibleChatKeys, setVisibleChatKeys] = useState<Set<string>>(() => new Set());
+  const [chatVisibilityInitialized, setChatVisibilityInitialized] = useState(false);
 
   // File browser state
   const {
@@ -278,7 +283,7 @@ export default function App({ onLogout }: AppProps) {
   }, [handleFileChanged]);
 
   // Dashboard data (extracted hook) — single SSE connection handles all events
-  const { memories, memoriesLoading, tokenData, remoteWorkspace, refreshMemories } = useDashboardData({
+  const { tokenData, refreshMemories } = useDashboardData({
     agentId: workspaceAgentId,
     onFileChanged,
   });
@@ -326,11 +331,6 @@ export default function App({ onLogout }: AppProps) {
 
     try { localStorage.setItem('nerve:viewMode', mode); } catch { /* ignore */ }
   }, [isCompactLayout, setFileBrowserCollapsed]);
-  const openTaskInBoard = useCallback((taskId: string) => {
-    setPendingTaskId(taskId);
-    setViewMode('kanban');
-  }, [setViewMode]);
-
   const openWorkspacePath = useCallback(async (targetPath: string) => {
     const params = new URLSearchParams({ path: targetPath, agentId: workspaceAgentId });
     const res = await fetch(`/api/files/resolve?${params.toString()}`);
@@ -600,6 +600,66 @@ export default function App({ onLogout }: AppProps) {
     return () => mq.removeListener(onChange);
   }, [handleCompactLayoutChange]);
 
+  const topLevelChats = useMemo(() => getTopLevelAgentSessions(sessions), [sessions]);
+
+  useEffect(() => {
+    try {
+      const migrated = localStorage.getItem(CHAT_HISTORY_WIDTH_MIGRATION_KEY) === 'true';
+      if (migrated) return;
+      setPanelRatio(DEFAULT_CHAT_HISTORY_PANEL_RATIO);
+      localStorage.setItem(CHAT_HISTORY_WIDTH_MIGRATION_KEY, 'true');
+    } catch {
+      setPanelRatio(DEFAULT_CHAT_HISTORY_PANEL_RATIO);
+    }
+  }, [setPanelRatio]);
+
+  useEffect(() => {
+    if (chatVisibilityInitialized) return;
+    if (!currentSession) return;
+
+    try {
+      const raw = localStorage.getItem(CHAT_VISIBILITY_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          setVisibleChatKeys(new Set(parsed.filter((value): value is string => typeof value === 'string')));
+          setChatVisibilityInitialized(true);
+          return;
+        }
+      }
+    } catch {
+      // ignore storage parse failures and seed a fresh set below
+    }
+
+    setVisibleChatKeys(new Set([currentSession]));
+    setChatVisibilityInitialized(true);
+  }, [chatVisibilityInitialized, currentSession]);
+
+  useEffect(() => {
+    if (!chatVisibilityInitialized) return;
+    try {
+      localStorage.setItem(CHAT_VISIBILITY_STORAGE_KEY, JSON.stringify(Array.from(visibleChatKeys)));
+    } catch {
+      // ignore storage failures
+    }
+  }, [chatVisibilityInitialized, visibleChatKeys]);
+
+  useEffect(() => {
+    if (!chatVisibilityInitialized || !currentSession) return;
+    setVisibleChatKeys(prev => {
+      const isCurrentTopLevel = topLevelChats.some((session) => getSessionKey(session) === currentSession);
+      if (!isCurrentTopLevel || prev.has(currentSession)) return prev;
+      const next = new Set(prev);
+      next.add(currentSession);
+      return next;
+    });
+  }, [chatVisibilityInitialized, currentSession, topLevelChats]);
+
+  const visibleTopLevelChats = useMemo(() => {
+    if (!chatVisibilityInitialized) return [];
+    return topLevelChats.filter((session) => visibleChatKeys.has(getSessionKey(session)) || getSessionKey(session) === currentSession);
+  }, [chatVisibilityInitialized, currentSession, topLevelChats, visibleChatKeys]);
+
   // Handlers for TTS provider/model changes
   const handleTtsProviderChange = useCallback((provider: TTSProvider) => {
     setTtsProvider(provider);
@@ -673,42 +733,27 @@ export default function App({ onLogout }: AppProps) {
     />
   );
 
-  const renderRightPanels = (onSelect: (key: string) => Promise<void> | void) => (
+  const renderSidebarPanels = (onSelect: (key: string) => Promise<void> | void) => (
     <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
-      {/* Sessions + Memory stacked vertically */}
-      <div className="flex-1 flex flex-col gap-3 min-h-0">
-        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
-          <PanelErrorBoundary name="Sessions">
-            <SessionList
-              sessions={sessions}
-              currentSession={currentSession}
-              busyState={busyState}
-              agentStatus={agentStatus}
-              unreadSessions={unreadSessions}
-              onSelect={onSelect}
-              onRefresh={refreshSessions}
-              onDelete={deleteSession}
-              onSpawn={handleSpawnSession}
-              onRename={renameSession}
-              onAbort={abortSession}
-              isLoading={sessionsLoading}
-              agentName={agentName}
-            />
-          </PanelErrorBoundary>
-        </div>
-        <div className="shell-panel flex-1 flex flex-col min-h-0 overflow-hidden rounded-[28px]">
-          <PanelErrorBoundary name="Workspace">
-            <WorkspacePanel
-              workspaceAgentId={workspaceAgentId}
-              memories={memories}
-              onRefreshMemories={refreshMemories}
-              memoriesLoading={memoriesLoading}
-              remoteWorkspace={remoteWorkspace}
-              onOpenBoard={() => setViewMode('kanban')}
-              onOpenTask={openTaskInBoard}
-            />
-          </PanelErrorBoundary>
-        </div>
+      <div className="shell-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[28px]">
+        <PanelErrorBoundary name="Chat History">
+          <SessionList
+            displayMode="chat"
+            sessions={visibleTopLevelChats}
+            currentSession={currentSession}
+            busyState={busyState}
+            agentStatus={agentStatus}
+            unreadSessions={unreadSessions}
+            onSelect={onSelect}
+            onRefresh={refreshSessions}
+            onDelete={deleteSession}
+            onSpawn={handleSpawnSession}
+            onRename={renameSession}
+            onAbort={abortSession}
+            isLoading={sessionsLoading}
+            agentName={agentName}
+          />
+        </PanelErrorBoundary>
       </div>
     </Suspense>
   );
@@ -717,7 +762,8 @@ export default function App({ onLogout }: AppProps) {
     <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading sessions…</div>}>
       <PanelErrorBoundary name="Sessions">
         <SessionList
-          sessions={sessions}
+          displayMode="chat"
+          sessions={visibleTopLevelChats}
           currentSession={currentSession}
           busyState={busyState}
           agentStatus={agentStatus}
@@ -736,22 +782,7 @@ export default function App({ onLogout }: AppProps) {
     </Suspense>
   );
 
-  const compactWorkspacePanel = (
-    <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading workspace…</div>}>
-      <PanelErrorBoundary name="Workspace">
-        <WorkspacePanel
-          workspaceAgentId={workspaceAgentId}
-          memories={memories}
-          onRefreshMemories={refreshMemories}
-          memoriesLoading={memoriesLoading}
-          remoteWorkspace={remoteWorkspace}
-          compact
-          onOpenBoard={() => setViewMode('kanban')}
-          onOpenTask={openTaskInBoard}
-        />
-      </PanelErrorBoundary>
-    </Suspense>
-  );
+  const compactWorkspacePanel = undefined;
 
   const showCompactFileBrowser = isCompactLayout && viewMode !== 'kanban' && !fileBrowserCollapsed;
 
@@ -980,15 +1011,16 @@ export default function App({ onLogout }: AppProps) {
           <div style={{ display: viewMode === 'kanban' ? 'none' : 'contents' }}>
             <ResizablePanels
               leftPercent={panelRatio}
+              leftWidthPx={DEFAULT_CHAT_HISTORY_WIDTH_PX}
               onResize={setPanelRatio}
               minLeftPercent={30}
               maxLeftPercent={85}
               rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
               onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
-              leftClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
-              rightClassName="boot-panel flex flex-col"
-              left={chatContent}
-              right={renderRightPanels(handleSessionChange)}
+              leftClassName="boot-panel flex flex-col"
+              rightClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
+              left={renderSidebarPanels(handleSessionChange)}
+              right={chatContent}
             />
           </div>
         )}

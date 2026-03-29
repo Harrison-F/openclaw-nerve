@@ -29,6 +29,7 @@ const COLORS_NORMAL = {
 } as const;
 
 interface SessionNodeProps {
+  displayMode?: 'session' | 'chat';
   node: TreeNode;
   isActive: boolean;
   isGrowing: boolean;
@@ -84,6 +85,7 @@ function arePropsEqual(prev: SessionNodeProps, next: SessionNodeProps): boolean 
 
 /** Single session node in the session tree with status badge and actions. */
 export const SessionNode = memo(function SessionNode({
+  displayMode = 'session',
   node,
   isActive,
   isGrowing,
@@ -215,6 +217,11 @@ export const SessionNode = memo(function SessionNode({
       <button
         type="button"
         onClick={handleSelect}
+        onDoubleClick={() => {
+          if (displayMode === 'chat' && !isRenaming) {
+            onStartRename?.(sessionKey, label);
+          }
+        }}
         aria-current={isActive ? 'true' : undefined}
         className={cn(
           'flex-1 min-w-0 flex items-center gap-2 bg-transparent border-0 text-left cursor-pointer py-2',
@@ -257,7 +264,7 @@ export const SessionNode = memo(function SessionNode({
         ) : (
           <SessionInfoPanel session={node.session} running={running}>
             <span className={cn(
-              "text-[0.667rem] font-bold flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap cursor-help",
+              "text-[0.667rem] font-bold flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap cursor-help pr-1",
               isCronRun ? "text-muted-foreground font-normal" : "text-foreground"
             )}>
               {isCron && <Timer size={11} className="text-purple mr-1 inline shrink-0" aria-label="Cron job" />}
@@ -267,25 +274,29 @@ export const SessionNode = memo(function SessionNode({
           </SessionInfoPanel>
         )}
 
-        {/* Progress bar */}
-        <div className="w-12 h-1.5 bg-background border border-border/60 overflow-hidden shrink-0">
-          <div
-            className={`h-full ${colors.bar}`}
-            style={{
-              width: `${pct}%`,
-              boxShadow,
-              transition: PROGRESS_BAR_TRANSITION,
-            }}
-          />
-        </div>
+        {displayMode !== 'chat' && (
+          <>
+            {/* Progress bar */}
+            <div className="w-12 h-1.5 bg-background border border-border/60 overflow-hidden shrink-0">
+              <div
+                className={`h-full ${colors.bar}`}
+                style={{
+                  width: `${pct}%`,
+                  boxShadow,
+                  transition: PROGRESS_BAR_TRANSITION,
+                }}
+              />
+            </div>
 
-        {/* Token count */}
-        <AnimatedNumber
-          value={displayTokens}
-          format={fmtK}
-          className="text-muted-foreground text-[0.6rem] w-14 text-right shrink-0"
-          duration={700}
-        />
+            {/* Token count */}
+            <AnimatedNumber
+              value={displayTokens}
+              format={fmtK}
+              className="text-muted-foreground text-[0.6rem] w-14 text-right shrink-0"
+              duration={700}
+            />
+          </>
+        )}
 
         {/* Unread indicator + Status badge */}
         {isUnread && <span className="unread-dot" aria-label="Unread" />}

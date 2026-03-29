@@ -105,11 +105,12 @@ export function getTopLevelAgentSessions(sessions: Session[]): Session[] {
   return sessions
     .filter((session) => isTopLevelAgentSessionKey(getSessionKey(session)))
     .sort((a, b) => {
+      const aTime = Number(a.updatedAt || a.lastActivity || 0);
+      const bTime = Number(b.updatedAt || b.lastActivity || 0);
+      if (bTime !== aTime) return bTime - aTime;
+
       const keyA = getSessionKey(a);
       const keyB = getSessionKey(b);
-      if (keyA === 'agent:main:main') return -1;
-      if (keyB === 'agent:main:main') return 1;
-
       const labelA = (a.displayName || a.label || keyA).toLowerCase();
       const labelB = (b.displayName || b.label || keyB).toLowerCase();
       return labelA.localeCompare(labelB);

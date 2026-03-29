@@ -8,6 +8,8 @@ interface ResizablePanelsProps {
   right: ReactNode;
   /** Current width of the left pane as a percentage (0–100). */
   leftPercent: number;
+  /** Fixed pixel width for the left pane. When set, the right pane absorbs remaining width. */
+  leftWidthPx?: number | null;
   /** Callback fired on drag-end with the new left-pane percentage. */
   onResize: (leftPercent: number) => void;
   /** Minimum left-pane width percentage. @default 30 */
@@ -35,6 +37,7 @@ export function ResizablePanels({
   left,
   right,
   leftPercent,
+  leftWidthPx = null,
   onResize,
   minLeftPercent = 30,
   maxLeftPercent = 85,
@@ -56,7 +59,7 @@ export function ResizablePanels({
   }, [leftPercent]);
 
   useLayoutEffect(() => {
-    if (!containerRef.current || rightWidthPx !== null || !onRightWidthChange) return;
+    if (!containerRef.current || rightWidthPx !== null || leftWidthPx !== null || !onRightWidthChange) return;
 
     const reportWidth = () => {
       if (!containerRef.current) return;
@@ -72,7 +75,7 @@ export function ResizablePanels({
     const observer = new ResizeObserver(() => reportWidth());
     observer.observe(containerRef.current);
     return () => observer.disconnect();
-  }, [localPercent, onRightWidthChange, rightWidthPx]);
+  }, [leftWidthPx, localPercent, onRightWidthChange, rightWidthPx]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -119,13 +122,17 @@ export function ResizablePanels({
       {/* Left panel */}
       <div
         className={`min-h-0 overflow-hidden ${leftClassName}`}
-        style={rightWidthPx !== null ? { flex: '1 1 auto', minWidth: 0 } : { flex: `${localPercent} 1 0%`, minWidth: 0 }}
+        style={leftWidthPx !== null
+          ? { flex: '0 0 auto', width: `${Math.max(0, leftWidthPx)}px`, minWidth: 0 }
+          : rightWidthPx !== null
+            ? { flex: '1 1 auto', minWidth: 0 }
+            : { flex: `${localPercent} 1 0%`, minWidth: 0 }}
       >
         {left}
       </div>
       
       {/* Resize handle */}
-      {rightWidthPx === null ? (
+      {rightWidthPx === null && leftWidthPx === null ? (
         <div
           onMouseDown={handleMouseDown}
           onDoubleClick={handleDoubleClick}
@@ -143,7 +150,11 @@ export function ResizablePanels({
       {/* Right panel */}
       <div
         className={`min-h-0 overflow-hidden ${rightClassName}`}
-        style={rightWidthPx !== null ? { flex: '0 0 auto', width: `${Math.max(0, rightWidthPx)}px`, minWidth: 0 } : { flex: `${100 - localPercent} 1 0%`, minWidth: 0 }}
+        style={rightWidthPx !== null
+          ? { flex: '0 0 auto', width: `${Math.max(0, rightWidthPx)}px`, minWidth: 0 }
+          : leftWidthPx !== null
+            ? { flex: '1 1 auto', minWidth: 0 }
+            : { flex: `${100 - localPercent} 1 0%`, minWidth: 0 }}
       >
         {right}
       </div>

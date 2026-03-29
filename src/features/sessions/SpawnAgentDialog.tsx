@@ -43,10 +43,11 @@ interface SpawnAgentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSpawn: (opts: SpawnSessionOpts) => Promise<void | boolean>;
+  mode?: 'all' | 'root-only';
 }
 
 /** Two-step session wizard for new top-level agents and subagents. */
-export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDialogProps) {
+export function SpawnAgentDialog({ open, onOpenChange, onSpawn, mode: dialogMode = 'all' }: SpawnAgentDialogProps) {
   const { sessions, currentSession, agentName: defaultAgentName } = useSessionContext();
 
   const [mode, setMode] = useState<SpawnMode>(null);
@@ -60,6 +61,8 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
   const [spawning, setSpawning] = useState(false);
   const [fetchedModels, setFetchedModels] = useState<ModelEntry[]>([]);
   const [spawnError, setSpawnError] = useState('');
+
+  const rootOnly = dialogMode === 'root-only';
 
   const rootSessions = useMemo(
     () => getTopLevelAgentSessions(sessions),
@@ -114,6 +117,13 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
 
   useEffect(() => {
     if (!open) return;
+    if (rootOnly) {
+      setMode('root');
+    }
+  }, [open, rootOnly]);
+
+  useEffect(() => {
+    if (!open) return;
     if (parentRootKey && rootSessions.some((session) => getSessionKey(session) === parentRootKey)) {
       return;
     }
@@ -128,7 +138,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
   }, [defaultAgentName, rootSessions]);
 
   const reset = useCallback(() => {
-    setMode(null);
+    setMode(rootOnly ? 'root' : null);
     setTask('');
     setLabel('');
     setAgentNameInput('');
@@ -205,7 +215,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
             : 'max-h-[calc(100dvh-1.067rem)] overflow-y-auto overscroll-contain sm:max-h-[min(100dvh-4rem,48rem)] sm:overflow-visible sm:max-w-xl'
         }
       >
-        {mode === null ? (
+        {mode === null && !rootOnly ? (
           <>
             <DialogHeader>
               <div className="cockpit-surface overflow-hidden border-border/80 bg-secondary/34 p-4 sm:p-5">
@@ -364,9 +374,11 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
           <>
             <DialogHeader>
               <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" onClick={handleBack} disabled={spawning} className="h-9 px-3 text-xs">
-                  Back
-                </Button>
+                {!rootOnly && (
+                  <Button type="button" variant="outline" onClick={handleBack} disabled={spawning} className="h-9 px-3 text-xs">
+                    Back
+                  </Button>
+                )}
                 <div className="cockpit-kicker">
                   <span className="text-primary">◆</span>
                   {mode === 'root' ? 'Top-level agent' : 'Subagent'}
@@ -377,7 +389,7 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
               </DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground">
                 {mode === 'root'
-                  ? 'Name the new top-level agent, then give it the opening task and runtime defaults.'
+                  ? 'Name the new chat, then give it the opening prompt and runtime defaults.'
                   : 'Choose which top-level agent should own the new subagent, then set the task and runtime defaults.'}
               </DialogDescription>
             </DialogHeader>
@@ -385,16 +397,16 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
             <div className="flex flex-col gap-3">
               {mode === 'root' ? (
                 <div>
-                  <label className="cockpit-field-label mb-2 block">Agent name</label>
+                  <label className="cockpit-field-label mb-2 block">Chat name</label>
                   <input
                     type="text"
                     value={agentNameInput}
                     onChange={(e) => setAgentNameInput(e.target.value)}
-                    placeholder="e.g. reviewer"
+                    placeholder="e.g. Nerve redesign"
                     className="cockpit-input"
                   />
                   <p className="cockpit-note mt-2">
-                    This becomes the top-level session label and the stable agent identity for its subagents.
+                    This becomes the title of the new top-level chat.
                   </p>
                 </div>
               ) : (
@@ -418,12 +430,12 @@ export function SpawnAgentDialog({ open, onOpenChange, onSpawn }: SpawnAgentDial
 
               <div>
                 <label className="cockpit-field-label mb-2 block">
-                  {mode === 'root' ? `Opening task for ${rootNamePreview}` : 'Task / prompt'}
+                  {mode === 'root' ? `Opening prompt for ${rootNamePreview}` : 'Task / prompt'}
                 </label>
                 <textarea
                   value={task}
                   onChange={(e) => setTask(e.target.value)}
-                  placeholder={mode === 'root' ? 'What should this new agent start working on?' : 'What should this subagent do?'}
+                  placeholder={mode === 'root' ? 'What should this new chat start with?' : 'What should this subagent do?'}
                   rows={3}
                   className="cockpit-textarea min-h-[132px]"
                 />

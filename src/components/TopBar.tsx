@@ -278,8 +278,8 @@ export function TopBar({
           {mobilePanelButtonsVisible && sessionsPanel && (
             <button
               onClick={() => togglePanel("sessions")}
-              title="Sessions"
-              aria-label="Toggle sessions panel"
+              title="Chat"
+              aria-label="Toggle chat panel"
               aria-expanded={visiblePanel === "sessions"}
               aria-haspopup="true"
               aria-controls="topbar-panel"
@@ -287,7 +287,7 @@ export function TopBar({
               className={buttonBase}
             >
               <Users size={14} aria-hidden="true" />
-              <span className="hidden sm:inline">Sessions</span>
+              <span className="hidden sm:inline">Chat</span>
             </button>
           )}
 

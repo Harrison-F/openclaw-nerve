@@ -26,10 +26,6 @@ function formatUptime(seconds: number): string {
   return d > 0 ? `${d}d ${h}:${m}:${s}` : `${h}:${m}:${s}`;
 }
 
-function formatServerTime(date: Date): string {
-  return date.toLocaleTimeString('en-GB', { hour12: false });
-}
-
 /** Fetch server time and gateway uptime from /api/server-info */
 async function fetchServerInfo(): Promise<{ serverTime?: number; gatewayStartedAt?: number } | null> {
   try {
@@ -103,11 +99,6 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
     ? 'RECONNECTING'
     : 'OFFLINE';
 
-  // Server time = local time + offset
-  const serverTime = serverTimeOffset !== null
-    ? new Date(now + serverTimeOffset)
-    : null;
-
   // Gateway uptime = (server now) - gatewayStartedAt
   const gatewayUptimeSecs = gatewayStartedAt && serverTimeOffset !== null
     ? Math.floor((now + serverTimeOffset - gatewayStartedAt) / 1000)
@@ -127,14 +118,6 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
           <span className="text-[0.533rem] max-[378px]:text-[0.4375rem]" aria-hidden="true">●</span>
           <span>{statusLabel}</span>
         </span>
-
-        {/* Server time (hidden on narrow screens) */}
-        <span className="hidden text-border md:inline">•</span>
-        {serverTime ? (
-          <span className="hidden font-mono tabular-nums text-foreground/72 md:inline">{formatServerTime(serverTime)}</span>
-        ) : (
-          <span className="hidden font-mono text-muted-foreground/40 md:inline">--:--:--</span>
-        )}
 
         <span className="text-border max-[378px]:text-[0.533rem]">•</span>
 

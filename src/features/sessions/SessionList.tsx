@@ -20,6 +20,7 @@ import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 
 interface SessionListProps {
+  displayMode?: 'session' | 'chat';
   sessions: Session[];
   currentSession: string;
   busyState: Record<string, boolean>;
@@ -52,7 +53,7 @@ function findNodeByKey(nodes: ReturnType<typeof buildSessionTree>, key: string):
 }
 
 /** Sidebar list of agent sessions with tree structure and context menus. */
-export function SessionList({ sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
+export function SessionList({ displayMode = 'session', sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
@@ -151,15 +152,15 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
       <div className="panel-header border-l-[3px] border-l-info">
         <span className="panel-label text-info">
           <span className="panel-diamond">◆</span>
-          AGENTS
+          {displayMode === 'chat' ? 'CHAT HISTORY' : 'AGENTS'}
         </span>
         <div className="ml-auto flex items-center gap-2">
           {onSpawn && (
             <button
               type="button"
               onClick={() => setSpawnOpen(true)}
-              aria-label="Create session"
-              title="Create session"
+              aria-label={displayMode === 'chat' ? 'New chat' : 'Create session'}
+              title={displayMode === 'chat' ? 'New chat' : 'Create session'}
               className="shell-icon-button size-10 px-0"
             >
               <Plus size={16} />
@@ -200,6 +201,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
           return (
             <SessionNode
               key={sessionKey}
+              displayMode={displayMode}
               node={node}
               isActive={isActive}
               isGrowing={isGrowing}
@@ -282,6 +284,7 @@ export function SessionList({ sessions, currentSession, busyState, agentStatus, 
           open={spawnOpen}
           onOpenChange={setSpawnOpen}
           onSpawn={onSpawn}
+          mode={displayMode === 'chat' ? 'root-only' : 'all'}
         />
       )}
     </div>
