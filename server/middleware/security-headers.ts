@@ -24,7 +24,7 @@ import type { MiddlewareHandler } from 'hono';
  * - frame-ancestors 'none': Prevent framing (like X-Frame-Options: DENY)
  */
 // Build connect-src dynamically: always include localhost, plus any extra CSP sources
-const baseConnectSrc = "'self' ws://localhost:* wss://localhost:* http://localhost:* https://localhost:* ws://127.0.0.1:* wss://127.0.0.1:* http://127.0.0.1:* https://127.0.0.1:*";
+const baseConnectSrc = "'self' ws://localhost:* wss://localhost:* http://localhost:* https://localhost:* ws://127.0.0.1:* wss://127.0.0.1:* http://127.0.0.1:* https://127.0.0.1:* ws://*.ts.net:* wss://*.ts.net:* http://*.ts.net:* https://*.ts.net:* ws://100.102.143.17:* wss://100.102.143.17:* http://100.102.143.17:* https://100.102.143.17:*";
 
 /**
  * Build CSP directives string lazily — env vars may not be loaded at import time
@@ -56,7 +56,7 @@ function getCspDirectives(): string {
     `connect-src ${connectSrc}`,
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",  // Allow blob: URLs for TTS audio playback
-    "frame-src 'self' http://localhost:* https://localhost:* http://127.0.0.1:* https://127.0.0.1:* https://s3.tradingview.com https://www.tradingview.com https://www.tradingview-widget.com https://s.tradingview.com",
+    "frame-src 'self' http://localhost:* https://localhost:* http://127.0.0.1:* https://127.0.0.1:* http://*.ts.net:* https://*.ts.net:* http://100.102.143.17:* https://100.102.143.17:* https://s3.tradingview.com https://www.tradingview.com https://www.tradingview-widget.com https://s.tradingview.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -68,11 +68,23 @@ function getCspDirectives(): string {
 export const securityHeaders: MiddlewareHandler = async (c, next) => {
   await next();
 
-  // Content Security Policy - defense in depth against XSS
-  c.header('Content-Security-Policy', getCspDirectives());
+  const isEmbeddedToolRoute = c.req.path === '/tools/apartment'
+    || c.req.path.startsWith('/tools/apartment/')
+    || c.req.path === '/tools/lightning'
+    || c.req.path.startsWith('/tools/lightning/');
 
-  // Prevent clickjacking
-  c.header('X-Frame-Options', 'DENY');
+  // Content Security Policy - defense in depth against XSS
+  if (isEmbeddedToolRoute) {
+    const toolCsp = getCspDirectives().replace(/frame-ancestors\s+'none'/, "frame-ancestors 'self'");
+    c.header('Content-Security-Policy', toolCsp);
+  } else {
+    c.header('Content-Security-Policy', getCspDirectives());
+  }
+
+  // Prevent clickjacking (except same-origin embedded tool routes)
+  if (!isEmbeddedToolRoute) {
+    c.header('X-Frame-Options', 'DENY');
+  }
 
   // Prevent MIME type sniffing
   c.header('X-Content-Type-Options', 'nosniff');
