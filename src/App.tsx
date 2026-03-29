@@ -1467,14 +1467,12 @@ export default function App({ onLogout }: AppProps) {
                 <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors group-hover:bg-primary/55 group-hover:shadow-[0_0_16px_rgba(0,0,0,0.22)]" />
               </div>
 
-              <div ref={chatToolRegionRef} className="flex h-full min-h-0 min-w-0 flex-1 gap-3 overflow-hidden">
+              <div ref={chatToolRegionRef} className="flex h-full min-h-0 min-w-0 flex-1 items-stretch justify-end gap-3 overflow-hidden">
                 <div
                   id="chat-pane-width-target"
                   ref={activeChatPaneRef}
                   className="shell-panel boot-panel min-h-0 overflow-hidden rounded-[28px]"
-                  style={toolPanelCollapsed
-                    ? { flex: '1 1 auto', minWidth: 0 }
-                    : { flex: '0 0 auto', width: `${toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2))}px`, minWidth: 0 }}
+                  style={{ flex: '1 1 auto', minWidth: 0 }}
                 >
                   {chatContent}
                 </div>
@@ -1487,7 +1485,7 @@ export default function App({ onLogout }: AppProps) {
                     const startX = event.clientX;
                     const startWidth = toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2));
                     const onMove = (moveEvent: MouseEvent) => {
-                      const nextWidth = startWidth - (moveEvent.clientX - startX);
+                      const nextWidth = startWidth + (moveEvent.clientX - startX);
                       console.debug('[tool-drag]', { startX, currentX: moveEvent.clientX, startWidth, nextWidth });
                       setToolPanelManualWidth(true);
                       setToolPanelWidth(nextWidth);

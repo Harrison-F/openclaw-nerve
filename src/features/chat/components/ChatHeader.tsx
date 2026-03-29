@@ -111,7 +111,7 @@ export function ChatHeader({
           <PanelLeftOpen size={17} />
         </button>
       )}
-      <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="flex min-w-0 flex-1 items-center gap-2 pr-1">
         <input
           type="text"
           value={draftTitle}
@@ -143,9 +143,9 @@ export function ChatHeader({
             ⚠ {uiError}
           </span>
         )}
-        <div className="flex min-w-0 shrink-0 items-center gap-0.5 sm:gap-1">
+        <div className="hidden min-w-0 shrink-0 items-center gap-0.5 lg:flex sm:gap-1">
           <Cpu size={12} className="hidden shrink-0 text-foreground/70 sm:block" aria-hidden="true" />
-          <span className="hidden text-[0.733rem] text-muted-foreground sm:inline">Model</span>
+          <span className="hidden text-[0.733rem] text-muted-foreground xl:inline">Model</span>
           <InlineSelect
             value={selectedModel}
             onChange={handleModelChange}
@@ -157,9 +157,9 @@ export function ChatHeader({
             options={modelOptions}
           />
         </div>
-        <div className="flex min-w-0 shrink-0 items-center gap-0.5 sm:gap-1">
+        <div className="hidden min-w-0 shrink-0 items-center gap-0.5 xl:flex sm:gap-1">
           <Gauge size={12} className="hidden shrink-0 text-foreground/70 sm:block" aria-hidden="true" />
-          <span className="hidden text-[0.733rem] text-muted-foreground sm:inline">Effort</span>
+          <span className="hidden text-[0.733rem] text-muted-foreground xl:inline">Effort</span>
           <InlineSelect
             value={selectedEffort}
             onChange={handleEffortChange}
@@ -207,7 +207,6 @@ export function ChatHeader({
             data-tone="danger"
           >
             <span aria-hidden="true">↺</span>
-            <span className="hidden sm:inline">Reset</span>
           </button>
         )}
       </div>
