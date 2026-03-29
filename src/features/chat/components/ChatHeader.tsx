@@ -115,17 +115,6 @@ export function ChatHeader({
         </button>
       )}
       <div className="flex min-w-0 flex-1 items-center gap-2 pr-1">
-        {onNewChat && (
-          <button
-            type="button"
-            onClick={onNewChat}
-            className="shell-icon-button size-10 shrink-0 px-0"
-            title="New chat"
-            aria-label="New chat"
-          >
-            <Plus size={16} />
-          </button>
-        )}
         <input
           type="text"
           value={draftTitle}
@@ -143,6 +132,17 @@ export function ChatHeader({
           aria-label="Chat title"
           className="min-w-0 flex-1 rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-[0.86rem] font-medium text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 focus:ring-1 focus:ring-primary/35 sm:max-w-[340px]"
         />
+        {onNewChat && (
+          <button
+            type="button"
+            onClick={onNewChat}
+            className="shell-icon-button size-10 shrink-0 px-0 ring-1 ring-border/70"
+            title="New chat"
+            aria-label="New chat"
+          >
+            <Plus size={16} />
+          </button>
+        )}
       </div>
 
       {/* Model + Effort selectors on the right */}
