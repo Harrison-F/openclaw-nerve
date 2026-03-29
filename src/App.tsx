@@ -70,7 +70,8 @@ const CHAT_VISIBILITY_STORAGE_KEY = 'nerve-visible-chat-session-keys-v1';
 const CHAT_HISTORY_WIDTH_MIGRATION_KEY = 'nerve-chat-history-width-migrated-v2';
 const DEFAULT_CHAT_HISTORY_PANEL_RATIO = 50;
 const DEFAULT_CHAT_HISTORY_WIDTH_PX = 220;
-const TOOL_PANEL_WIDTH_STORAGE_KEY = 'nerve-tool-panel-width-v2';
+const TOOL_PANEL_WIDTH_STORAGE_KEY = 'nerve-tool-panel-width-v3';
+const TOOL_PANEL_CHAT_BASELINE_STORAGE_KEY = 'nerve-tool-panel-chat-baseline-v1';
 const TOOL_PANEL_COLLAPSED_STORAGE_KEY = 'nerve-tool-panel-collapsed';
 const TOOL_PANEL_SELECTED_STORAGE_KEY = 'nerve-tool-panel-selected-tool';
 const TOOL_PANEL_RAIL_WIDTH_PX = 56;
@@ -326,6 +327,16 @@ export default function App({ onLogout }: AppProps) {
     }
   }, []);
 
+  const setToolPanelChatBaselineWidth = useCallback((nextWidth: number) => {
+    const clamped = Math.max(320, Math.min(2400, Math.round(nextWidth)));
+    setToolPanelChatBaselineWidthState(clamped);
+    try {
+      localStorage.setItem(TOOL_PANEL_CHAT_BASELINE_STORAGE_KEY, String(clamped));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
   const handleToggleToolPanel = useCallback(() => {
     setToolPanelCollapsed(prev => !prev);
   }, [setToolPanelCollapsed]);
@@ -453,6 +464,16 @@ export default function App({ onLogout }: AppProps) {
   const [toolPanelWidth, setToolPanelWidthState] = useState<number | null>(() => {
     try {
       const saved = localStorage.getItem(TOOL_PANEL_WIDTH_STORAGE_KEY);
+      if (!saved) return null;
+      const parsed = Number(saved);
+      return Number.isFinite(parsed) && parsed >= 320 ? parsed : null;
+    } catch {
+      return null;
+    }
+  });
+  const [toolPanelChatBaselineWidth, setToolPanelChatBaselineWidthState] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem(TOOL_PANEL_CHAT_BASELINE_STORAGE_KEY);
       if (!saved) return null;
       const parsed = Number(saved);
       return Number.isFinite(parsed) && parsed >= 320 ? parsed : null;
@@ -870,8 +891,16 @@ export default function App({ onLogout }: AppProps) {
 
   useEffect(() => {
     if (!desktopRightPanelWidth || desktopRightPanelWidth <= 0) return;
+    if (toolPanelCollapsed) {
+      setToolPanelChatBaselineWidth(desktopRightPanelWidth);
+    }
+  }, [desktopRightPanelWidth, setToolPanelChatBaselineWidth, toolPanelCollapsed]);
 
-    const targetDefaultWidth = Math.max(320, Math.round(desktopRightPanelWidth * 0.5));
+  useEffect(() => {
+    const baselineWidth = toolPanelChatBaselineWidth ?? desktopRightPanelWidth;
+    if (!baselineWidth || baselineWidth <= 0) return;
+
+    const targetDefaultWidth = Math.max(320, Math.round(baselineWidth * 0.5));
 
     if (toolPanelWidth === null) {
       setToolPanelWidth(targetDefaultWidth);
@@ -879,11 +908,11 @@ export default function App({ onLogout }: AppProps) {
     }
 
     // One-time migration guard: if an older saved width is clearly undersized,
-    // lift it to the new default instead of preserving the cramped layout forever.
-    if (toolPanelWidth < Math.max(320, Math.round(targetDefaultWidth * 0.82))) {
+    // lift it to the intended 50%-of-chat default instead of preserving the cramped layout forever.
+    if (toolPanelWidth < Math.max(320, Math.round(targetDefaultWidth * 0.9))) {
       setToolPanelWidth(targetDefaultWidth);
     }
-  }, [desktopRightPanelWidth, setToolPanelWidth, toolPanelWidth]);
+  }, [desktopRightPanelWidth, setToolPanelWidth, toolPanelChatBaselineWidth, toolPanelWidth]);
 
   const visibleSaveToast = saveToast?.agentId === sharedWorkspaceAgentId
     && saveToast.workspaceVersion === workspaceVersion
@@ -1282,7 +1311,7 @@ export default function App({ onLogout }: AppProps) {
               onResize={() => {}}
               minLeftPercent={45}
               maxLeftPercent={85}
-              rightWidthPx={toolPanelCollapsed ? TOOL_PANEL_RAIL_WIDTH_PX : (toolPanelWidth ?? Math.max(320, Math.round((desktopRightPanelWidth ?? 640) * 0.5)))}
+              rightWidthPx={toolPanelCollapsed ? TOOL_PANEL_RAIL_WIDTH_PX : (toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) * 0.5)))}
               onRightWidthChange={toolPanelCollapsed ? undefined : setToolPanelWidth}
               left={(
                 <ResizablePanels
@@ -1292,7 +1321,7 @@ export default function App({ onLogout }: AppProps) {
                   minLeftPercent={30}
                   maxLeftPercent={85}
                   rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
-                  onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
+                  onRightWidthChange={fileBrowserCollapsed || !toolPanelCollapsed ? undefined : setDesktopRightPanelWidth}
                   leftClassName="boot-panel flex flex-col"
                   rightClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
                   left={renderSidebarPanels(handleSessionChange)}
