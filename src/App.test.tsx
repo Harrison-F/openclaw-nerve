@@ -49,18 +49,22 @@ const {
   };
 
   const saveFileByAgent = {
+    main: vi.fn<[string], Promise<SaveResult>>(),
     alpha: vi.fn<[string], Promise<SaveResult>>(),
     bravo: vi.fn<[string], Promise<SaveResult>>(),
   };
   const saveAllDirtyFilesByAgent = {
+    main: vi.fn<[], Promise<SaveAllResult>>(),
     alpha: vi.fn<[], Promise<SaveAllResult>>(),
     bravo: vi.fn<[], Promise<SaveAllResult>>(),
   };
   const discardAllDirtyFilesByAgent = {
+    main: vi.fn<[], void>(),
     alpha: vi.fn<[], void>(),
     bravo: vi.fn<[], void>(),
   };
   const dirtyStateByAgent: Record<string, boolean> = {
+    main: false,
     alpha: false,
     bravo: false,
   };
@@ -367,10 +371,9 @@ describe('App save toast workspace scoping', () => {
     });
   });
 
-  it('drops a late save conflict toast after switching workspaces before the save resolves', async () => {
-    const alphaSave = createDeferred<SaveResult>();
-    saveFileByAgent.alpha.mockReturnValue(alphaSave.promise);
-    saveFileByAgent.bravo.mockResolvedValue({ ok: true });
+  it('keeps a late save conflict toast when switching chats because the shared workspace stays the same', async () => {
+    const mainSave = createDeferred<SaveResult>();
+    saveFileByAgent.main.mockReturnValue(mainSave.promise);
 
     const { rerender } = render(<App />);
 
@@ -379,20 +382,19 @@ describe('App save toast workspace scoping', () => {
     sessionContext.currentSession = 'agent:bravo:main';
     rerender(<App />);
 
-    expect(screen.getByTestId('workspace-agent')).toHaveTextContent('bravo');
+    expect(screen.getByTestId('workspace-agent')).toHaveTextContent('main');
 
     await act(async () => {
-      alphaSave.resolve({ ok: false, conflict: true });
+      mainSave.resolve({ ok: false, conflict: true });
       await Promise.resolve();
     });
 
-    expect(screen.queryByText('File changed externally.')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
+    expect(await screen.findByText('File changed externally.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
   });
 
-  it('never passes a stale save conflict toast into the first render after a workspace switch', async () => {
-    saveFileByAgent.alpha.mockResolvedValue({ ok: false, conflict: true });
-    saveFileByAgent.bravo.mockResolvedValue({ ok: true });
+  it('keeps the shared workspace agent pinned to main after chat switches', async () => {
+    saveFileByAgent.main.mockResolvedValue({ ok: false, conflict: true });
 
     const { rerender } = render(<App />);
 
@@ -406,15 +408,14 @@ describe('App save toast workspace scoping', () => {
 
     const switchSnapshots = tabRenderSnapshots.slice(snapshotsBeforeSwitch);
     expect(switchSnapshots[0]).toMatchObject({
-      workspaceAgentId: 'bravo',
-      hasSaveToast: false,
-      saveToastPath: null,
+      workspaceAgentId: 'main',
+      hasSaveToast: true,
+      saveToastPath: 'shared.md',
     });
   });
 
-  it('dismisses an active save conflict toast on workspace switch so reload cannot target the wrong workspace', async () => {
-    saveFileByAgent.alpha.mockResolvedValue({ ok: false, conflict: true });
-    saveFileByAgent.bravo.mockResolvedValue({ ok: true });
+  it('keeps an active save conflict toast across chat switches so reload still targets the shared workspace', async () => {
+    saveFileByAgent.main.mockResolvedValue({ ok: false, conflict: true });
 
     const { rerender } = render(<App />);
 
@@ -426,15 +427,14 @@ describe('App save toast workspace scoping', () => {
     sessionContext.currentSession = 'agent:bravo:main';
     rerender(<App />);
 
-    expect(screen.getByTestId('workspace-agent')).toHaveTextContent('bravo');
-    expect(screen.queryByText('File changed externally.')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('workspace-agent')).toHaveTextContent('main');
+    expect(screen.getByText('File changed externally.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
     expect(reloadCalls).toEqual([]);
   });
 
-  it('does not resurface a stale save conflict toast after switching away and back', async () => {
-    saveFileByAgent.alpha.mockResolvedValue({ ok: false, conflict: true });
-    saveFileByAgent.bravo.mockResolvedValue({ ok: true });
+  it('does not lose the shared-workspace save conflict toast after switching away and back', async () => {
+    saveFileByAgent.main.mockResolvedValue({ ok: false, conflict: true });
 
     const { rerender } = render(<App />);
 
@@ -445,18 +445,18 @@ describe('App save toast workspace scoping', () => {
     sessionContext.currentSession = 'agent:bravo:main';
     rerender(<App />);
 
-    expect(screen.queryByText('File changed externally.')).not.toBeInTheDocument();
+    expect(screen.getByText('File changed externally.')).toBeInTheDocument();
 
     sessionContext.currentSession = 'agent:alpha:main';
     rerender(<App />);
 
-    expect(screen.getByTestId('workspace-agent')).toHaveTextContent('alpha');
-    expect(screen.queryByText('File changed externally.')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Reload' })).not.toBeInTheDocument();
+    expect(screen.getByTestId('workspace-agent')).toHaveTextContent('main');
+    expect(screen.getByText('File changed externally.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
   });
 });
 
-describe('App workspace switch guard', () => {
+describe('App shared workspace navigation', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionContext.currentSession = 'agent:alpha:main';
@@ -464,10 +464,11 @@ describe('App workspace switch guard', () => {
     sessionContext.spawnSession.mockReset();
     Object.values(saveAllDirtyFilesByAgent).forEach((mockFn) => mockFn.mockReset());
     Object.values(discardAllDirtyFilesByAgent).forEach((mockFn) => mockFn.mockReset());
-    dirtyStateByAgent.alpha = true;
+    dirtyStateByAgent.main = true;
+    dirtyStateByAgent.alpha = false;
     dirtyStateByAgent.bravo = false;
-    saveAllDirtyFilesByAgent.alpha.mockResolvedValue({ ok: true });
-    discardAllDirtyFilesByAgent.alpha.mockImplementation(() => {});
+    saveAllDirtyFilesByAgent.main.mockResolvedValue({ ok: true });
+    discardAllDirtyFilesByAgent.main.mockImplementation(() => {});
   });
 
   it('does not guard same-agent subagent navigation', () => {
@@ -479,73 +480,33 @@ describe('App workspace switch guard', () => {
     expect(screen.queryByText('Unsaved workspace edits')).not.toBeInTheDocument();
   });
 
-  it('guards cross-agent session selection until save and switch completes', async () => {
+  it('does not guard cross-agent session selection because chat switches no longer switch workspaces', () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
 
-    expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
-    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
-
-    await waitFor(() => {
-      expect(saveAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
-      expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:bravo:main');
-    });
+    expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:bravo:main');
+    expect(saveAllDirtyFilesByAgent.main).not.toHaveBeenCalled();
+    expect(discardAllDirtyFilesByAgent.main).not.toHaveBeenCalled();
+    expect(screen.queryByText('Unsaved workspace edits')).not.toBeInTheDocument();
   });
 
-  it('lets the user cancel a guarded switch without mutating anything', () => {
+  it('does not surface the old workspace-switch confirmation on chat changes', () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
-    expect(saveAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
-    expect(discardAllDirtyFilesByAgent.alpha).not.toHaveBeenCalled();
-    expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save and switch' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Discard and switch' })).not.toBeInTheDocument();
   });
 
-  it('discards dirty files before switching when requested', async () => {
-    render(<App />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
-
-    await waitFor(() => {
-      expect(discardAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
-      expect(sessionContext.setCurrentSession).toHaveBeenCalledWith('agent:bravo:main');
-    });
-  });
-
-  it('stays on the current agent and surfaces an error when save and switch fails', async () => {
-    saveAllDirtyFilesByAgent.alpha.mockResolvedValue({ ok: false, failedPath: 'shared.md', conflict: true });
-
-    render(<App />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
-
-    await waitFor(() => {
-      expect(saveAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
-    });
-
-    expect(sessionContext.setCurrentSession).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert')).toHaveTextContent('shared.md');
-  });
-
-  it('guards root-agent creation until the user confirms the switch', async () => {
+  it('does not guard root-agent creation behind workspace prompts', async () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Spawn Root Charlie' }));
 
-    expect(sessionContext.spawnSession).not.toHaveBeenCalled();
-    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Discard and switch' }));
-
     await waitFor(() => {
-      expect(discardAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
       expect(sessionContext.spawnSession).toHaveBeenCalledWith({
         kind: 'root',
         agentName: 'Charlie',
@@ -554,20 +515,18 @@ describe('App workspace switch guard', () => {
         thinking: 'medium',
       });
     });
+
+    expect(saveAllDirtyFilesByAgent.main).not.toHaveBeenCalled();
+    expect(discardAllDirtyFilesByAgent.main).not.toHaveBeenCalled();
+    expect(screen.queryByText('Unsaved workspace edits')).not.toBeInTheDocument();
   });
 
-  it('guards cross-agent subagent creation too', async () => {
+  it('does not guard cross-agent subagent creation either', async () => {
     render(<App />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Spawn Bravo Subagent' }));
 
-    expect(sessionContext.spawnSession).not.toHaveBeenCalled();
-    expect(screen.getByText('Unsaved workspace edits')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Save and switch' }));
-
     await waitFor(() => {
-      expect(saveAllDirtyFilesByAgent.alpha).toHaveBeenCalledTimes(1);
       expect(sessionContext.spawnSession).toHaveBeenCalledWith({
         kind: 'subagent',
         parentSessionKey: 'agent:bravo:main',
@@ -577,5 +536,8 @@ describe('App workspace switch guard', () => {
         cleanup: 'keep',
       });
     });
+
+    expect(saveAllDirtyFilesByAgent.main).not.toHaveBeenCalled();
+    expect(screen.queryByText('Unsaved workspace edits')).not.toBeInTheDocument();
   });
 });

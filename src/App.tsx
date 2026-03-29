@@ -41,7 +41,6 @@ import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
 import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
 import { buildAgentRootSessionKey, getSessionDisplayLabel, getTopLevelAgentSessions } from '@/features/sessions/sessionKeys';
-import { shouldGuardWorkspaceSwitch } from '@/features/workspace/workspaceSwitchGuard';
 import { getWorkspaceAgentId, getWorkspaceRootSessionKey } from '@/features/workspace/workspaceScope';
 
 // Lazy-loaded features (not needed in initial bundle)
@@ -68,6 +67,7 @@ const CHAT_VISIBILITY_STORAGE_KEY = 'nerve-visible-chat-session-keys-v1';
 const CHAT_HISTORY_WIDTH_MIGRATION_KEY = 'nerve-chat-history-width-migrated-v2';
 const DEFAULT_CHAT_HISTORY_PANEL_RATIO = 50;
 const DEFAULT_CHAT_HISTORY_WIDTH_PX = 220;
+const SHARED_WORKSPACE_AGENT_ID = 'main';
 
 function buildWorkspaceSwitchErrorMessage(result: {
   failedPath?: string;
@@ -189,17 +189,17 @@ export default function App({ onLogout }: AppProps) {
     setFileBrowserCollapsed(prev => !prev);
   }, [setFileBrowserCollapsed]);
 
-  const workspaceAgentId = useMemo(() => getWorkspaceAgentId(currentSession), [currentSession]);
+  const sharedWorkspaceAgentId = SHARED_WORKSPACE_AGENT_ID;
   const [visibleChatKeys, setVisibleChatKeys] = useState<Set<string>>(() => new Set());
   const [chatVisibilityInitialized, setChatVisibilityInitialized] = useState(false);
 
-  // File browser state
+  // File browser state stays pinned to the shared/main workspace.
   const {
     openFiles, activeTab, setActiveTab,
     openFile, closeFile, updateContent, saveFile, reloadFile,
     handleFileChanged, remapOpenPaths, closeOpenPathsByPrefix,
-    hasDirtyFiles, saveAllDirtyFiles, discardAllDirtyFiles,
-  } = useOpenFiles(workspaceAgentId);
+    saveAllDirtyFiles, discardAllDirtyFiles,
+  } = useOpenFiles(sharedWorkspaceAgentId);
 
   // Save with workspace-scoped conflict toast
   const [saveToast, setSaveToast] = useState<{
@@ -210,7 +210,7 @@ export default function App({ onLogout }: AppProps) {
   } | null>(null);
   const [workspaceVersion, bumpWorkspaceVersion] = useReducer((version: number) => version + 1, 0);
   const saveToastTimerRef = useRef<number | null>(null);
-  const workspaceAgentIdRef = useRef(workspaceAgentId);
+  const workspaceAgentIdRef = useRef(sharedWorkspaceAgentId);
   const [pendingWorkspaceSwitch, setPendingWorkspaceSwitch] = useState<PendingWorkspaceSwitch | null>(null);
   const [workspaceSwitchAction, setWorkspaceSwitchAction] = useState<'save' | 'discard' | null>(null);
   const [workspaceSwitchError, setWorkspaceSwitchError] = useState<string | null>(null);
@@ -247,15 +247,15 @@ export default function App({ onLogout }: AppProps) {
   }, [clearSaveToastTimer, workspaceVersion]);
 
   useEffect(() => {
-    workspaceAgentIdRef.current = workspaceAgentId;
+    workspaceAgentIdRef.current = sharedWorkspaceAgentId;
     bumpWorkspaceVersion();
     clearSaveToastTimer();
-  }, [clearSaveToastTimer, workspaceAgentId]);
+  }, [clearSaveToastTimer, sharedWorkspaceAgentId]);
 
   useEffect(() => () => clearSaveToastTimer(), [clearSaveToastTimer]);
 
   const handleSaveFile = useCallback(async (filePath: string) => {
-    const requestAgentId = workspaceAgentId;
+    const requestAgentId = sharedWorkspaceAgentId;
     const result = await saveFile(filePath);
 
     if (workspaceAgentIdRef.current !== requestAgentId) {
@@ -270,7 +270,7 @@ export default function App({ onLogout }: AppProps) {
     }
 
     dismissSaveToast();
-  }, [dismissSaveToast, saveFile, showSaveToastForAgent, workspaceAgentId]);
+  }, [dismissSaveToast, saveFile, showSaveToastForAgent, sharedWorkspaceAgentId]);
 
   // Single file.changed handler, feeds both open files and tree refresh.
   const onFileChanged = useCallback((path: string, targetAgentId: string) => {
@@ -284,7 +284,7 @@ export default function App({ onLogout }: AppProps) {
 
   // Dashboard data (extracted hook) — single SSE connection handles all events
   const { tokenData, refreshMemories } = useDashboardData({
-    agentId: workspaceAgentId,
+    agentId: sharedWorkspaceAgentId,
     onFileChanged,
   });
 
@@ -332,7 +332,7 @@ export default function App({ onLogout }: AppProps) {
     try { localStorage.setItem('nerve:viewMode', mode); } catch { /* ignore */ }
   }, [isCompactLayout, setFileBrowserCollapsed]);
   const openWorkspacePath = useCallback(async (targetPath: string) => {
-    const params = new URLSearchParams({ path: targetPath, agentId: workspaceAgentId });
+    const params = new URLSearchParams({ path: targetPath, agentId: sharedWorkspaceAgentId });
     const res = await fetch(`/api/files/resolve?${params.toString()}`);
     const data = await res.json().catch(() => null) as {
       ok?: boolean;
@@ -350,8 +350,8 @@ export default function App({ onLogout }: AppProps) {
     }
 
     setFileBrowserCollapsed(false);
-    setRevealRequest({ id: Date.now(), path: data.path, kind: data.type, agentId: workspaceAgentId });
-  }, [openFile, setFileBrowserCollapsed, workspaceAgentId]);
+    setRevealRequest({ id: Date.now(), path: data.path, kind: data.type, agentId: sharedWorkspaceAgentId });
+  }, [openFile, setFileBrowserCollapsed, sharedWorkspaceAgentId]);
 
   const toggleMobileTopBar = useCallback(() => {
     setIsMobileTopBarHidden((prev) => !prev);
@@ -445,26 +445,15 @@ export default function App({ onLogout }: AppProps) {
   }, [agentName, sessions]);
 
   const requestWorkspaceTransition = useCallback((
-    targetSessionKey: string,
-    targetLabel: string,
+    _targetSessionKey: string,
+    _targetLabel: string,
     execute: () => Promise<void>,
   ) => {
-    if (!shouldGuardWorkspaceSwitch(currentSession, targetSessionKey, hasDirtyFiles)) {
-      return execute().then(() => true);
-    }
-
-    setWorkspaceSwitchAction(null);
-    setWorkspaceSwitchError(null);
-
-    return new Promise<boolean>((resolve, reject) => {
-      setPendingWorkspaceSwitch({
-        targetLabel,
-        execute,
-        resolve,
-        reject,
-      });
-    });
-  }, [currentSession, hasDirtyFiles]);
+    // Chat navigation is intentionally decoupled from the file browser workspace.
+    // The shared workspace stays pinned to `main`, so switching chats should not
+    // trigger save/discard prompts that were meant for cross-workspace navigation.
+    return execute().then(() => true);
+  }, []);
 
   const handleCancelWorkspaceSwitch = useCallback(() => {
     if (workspaceSwitchAction || !pendingWorkspaceSwitch) return;
@@ -681,7 +670,7 @@ export default function App({ onLogout }: AppProps) {
     setSttModel(model);
   }, [setSttModel]);
 
-  const visibleSaveToast = saveToast?.agentId === workspaceAgentId
+  const visibleSaveToast = saveToast?.agentId === sharedWorkspaceAgentId
     && saveToast.workspaceVersion === workspaceVersion
     ? saveToast
     : null;
@@ -690,7 +679,7 @@ export default function App({ onLogout }: AppProps) {
     <TabbedContentArea
       activeTab={activeTab}
       openFiles={openFiles}
-      workspaceAgentId={workspaceAgentId}
+      workspaceAgentId={sharedWorkspaceAgentId}
       onSelectTab={setActiveTab}
       onCloseTab={closeFile}
       onContentChange={updateContent}
@@ -948,7 +937,7 @@ export default function App({ onLogout }: AppProps) {
           <div className={viewMode === 'kanban' ? 'hidden' : fileBrowserCollapsed ? 'contents' : 'h-full min-h-0'}>
             <PanelErrorBoundary name="File Explorer">
               <FileTreePanel
-                workspaceAgentId={workspaceAgentId}
+                workspaceAgentId={sharedWorkspaceAgentId}
                 onOpenFile={openFile}
                 lastChangedEvent={lastChangedEvent}
                 revealRequest={revealRequest}
@@ -974,7 +963,7 @@ export default function App({ onLogout }: AppProps) {
               <div className="pointer-events-auto h-full w-[min(86vw,320px)] max-w-full animate-in slide-in-from-left-4 duration-200">
                 <PanelErrorBoundary name="File Explorer">
                   <FileTreePanel
-                    workspaceAgentId={workspaceAgentId}
+                    workspaceAgentId={sharedWorkspaceAgentId}
                     onOpenFile={openFile}
                     lastChangedEvent={lastChangedEvent}
                     revealRequest={revealRequest}
