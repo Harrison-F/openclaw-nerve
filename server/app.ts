@@ -46,6 +46,7 @@ import filesRoutes from './routes/files.js';
 import voicePhrasesRoutes from './routes/voice-phrases.js';
 import fileBrowserRoutes from './routes/file-browser.js';
 import kanbanRoutes from './routes/kanban.js';
+import toolsRoutes from './routes/tools.js';
 // activity routes removed — tab dropped from workspace panel
 
 const app = new Hono();
@@ -91,6 +92,7 @@ const routes = [
   voicePhrasesRoutes, fileBrowserRoutes, channelsRoutes, kanbanRoutes,
 ];
 for (const route of routes) app.route('/', route);
+app.route('/', toolsRoutes);
 
 // ── Static files + SPA fallback ──────────────────────────────────────
 
