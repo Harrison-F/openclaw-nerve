@@ -35,6 +35,21 @@ function allowedPrefixes(): string[] {
   ].filter(Boolean);
 }
 
+async function canonicalizePrefixes(prefixes: string[]): Promise<string[]> {
+  const canonical = await Promise.all(prefixes.map(async (prefix) => {
+    try {
+      return await fs.promises.realpath(prefix);
+    } catch {
+      return prefix;
+    }
+  }));
+  return [...new Set(canonical)];
+}
+
+function isWithinAllowedPrefix(targetPath: string, prefixes: string[]): boolean {
+  return prefixes.some((prefix) => targetPath.startsWith(prefix + path.sep) || targetPath === prefix);
+}
+
 app.get('/api/files', async (c) => {
   const rawPath = c.req.query('path');
   if (!rawPath) return c.text('Missing path parameter', 400);
@@ -49,7 +64,8 @@ app.get('/api/files', async (c) => {
 
   // Directory prefix check
   const prefixes = allowedPrefixes();
-  const allowed = prefixes.some((prefix) => resolved.startsWith(prefix + path.sep) || resolved === prefix);
+  const canonicalPrefixes = await canonicalizePrefixes(prefixes);
+  const allowed = isWithinAllowedPrefix(resolved, prefixes) || isWithinAllowedPrefix(resolved, canonicalPrefixes);
   if (!allowed) return c.text('Access denied', 403);
 
   // Resolve symlinks and re-check prefix to prevent symlink traversal
@@ -59,7 +75,8 @@ app.get('/api/files', async (c) => {
   } catch {
     return c.text('Not found', 404);
   }
-  const realAllowed = prefixes.some((prefix) => realPath.startsWith(prefix + path.sep) || realPath === prefix);
+  const realAllowed = isWithinAllowedPrefix(realPath, prefixes)
+    || isWithinAllowedPrefix(realPath, canonicalPrefixes);
   if (!realAllowed) return c.text('Access denied', 403);
 
   try {
