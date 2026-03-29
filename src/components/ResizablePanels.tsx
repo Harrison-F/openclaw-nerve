@@ -118,10 +118,10 @@ export function ResizablePanels({
   }, [handleMouseMove, handleMouseUp]);
 
   return (
-    <div ref={containerRef} className="flex-1 flex overflow-hidden">
+    <div ref={containerRef} className="flex h-full min-h-0 flex-1 overflow-hidden">
       {/* Left panel */}
       <div
-        className={`min-h-0 overflow-hidden ${leftClassName}`}
+        className={`flex h-full min-h-0 flex-col overflow-hidden ${leftClassName}`}
         style={leftWidthPx !== null
           ? { flex: '0 0 auto', width: `${Math.max(0, leftWidthPx)}px`, minWidth: 0 }
           : rightWidthPx !== null
@@ -149,7 +149,7 @@ export function ResizablePanels({
       
       {/* Right panel */}
       <div
-        className={`min-h-0 overflow-hidden ${rightClassName}`}
+        className={`flex h-full min-h-0 flex-col overflow-hidden ${rightClassName}`}
         style={rightWidthPx !== null
           ? { flex: '0 0 auto', width: `${Math.max(0, rightWidthPx)}px`, minWidth: 0 }
           : leftWidthPx !== null
