@@ -1,4 +1,3 @@
-import { useState, useEffect, useCallback } from 'react';
 import { ContextMeter } from './ContextMeter';
 import { UpdateBadge } from './UpdateBadge';
 import { useGateway } from '@/contexts/GatewayContext';
@@ -7,8 +6,6 @@ import { useGateway } from '@/contexts/GatewayContext';
 interface StatusBarProps {
   /** Current WebSocket connection state to the gateway. */
   connectionState: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
-  /** Number of active agent sessions. */
-  sessionCount: number;
   /** ASCII sparkline string rendered at the right edge of the bar. */
   sparkline: string;
   /** Context tokens consumed in the active session (omit to hide the meter). */
@@ -17,73 +14,17 @@ interface StatusBarProps {
   contextLimit?: number;
 }
 
-function formatUptime(seconds: number): string {
-  if (seconds < 0) return '00:00:00';
-  const d = Math.floor(seconds / 86400);
-  const h = Math.floor((seconds % 86400) / 3600).toString().padStart(2, '0');
-  const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
-  const s = Math.floor(seconds % 60).toString().padStart(2, '0');
-  return d > 0 ? `${d}d ${h}:${m}:${s}` : `${h}:${m}:${s}`;
-}
-
-/** Fetch server time and gateway uptime from /api/server-info */
-async function fetchServerInfo(): Promise<{ serverTime?: number; gatewayStartedAt?: number } | null> {
-  try {
-    const res = await fetch('/api/server-info');
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Bottom status bar for the Nerve cockpit.
  *
- * Shows connection state, server time, session count, gateway uptime,
+ * Shows connection state, session count,
  * an optional context-window meter, a sparkline, and the app version.
  */
-export function StatusBar({ connectionState, sessionCount, sparkline, contextTokens, contextLimit }: StatusBarProps) {
+export function StatusBar({ connectionState, sparkline, contextTokens, contextLimit }: StatusBarProps) {
   useGateway(); // Keep gateway context connected
-
-  // Server time: offset between local clock and server clock
-  const [serverTimeOffset, setServerTimeOffset] = useState<number | null>(null);
-  // Gateway start time (epoch ms) — persists across page loads
-  const [gatewayStartedAt, setGatewayStartedAt] = useState<number | null>(null);
-  // Ticking display values
-  const [now, setNow] = useState(() => Date.now());
 
   // Use connectionState as key to trigger CSS animation on change
   const flashKey = connectionState;
-
-  // Sync server info helper
-  const syncServerInfo = useCallback(async (signal: { cancelled: boolean }) => {
-    const data = await fetchServerInfo();
-    if (signal.cancelled || !data) return;
-    const localNow = Date.now();
-    if (typeof data.serverTime === 'number') {
-      setServerTimeOffset(data.serverTime - localNow);
-    }
-    if (typeof data.gatewayStartedAt === 'number') {
-      setGatewayStartedAt(data.gatewayStartedAt);
-    }
-  }, []);
-
-  // Fetch server info on mount and reconnect
-  useEffect(() => {
-    // Skip if disconnected/connecting (except initial mount)
-    if (connectionState !== 'connected' && connectionState !== 'disconnected') return;
-    const signal = { cancelled: false };
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch with cancellation is valid
-    syncServerInfo(signal);
-    return () => { signal.cancelled = true; };
-  }, [connectionState, syncServerInfo]);
-
-  // Tick every second
-  useEffect(() => {
-    const iv = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(iv);
-  }, []);
 
   const statusColor = connectionState === 'connected'
     ? 'border-green/30 bg-green/10 text-green'
@@ -99,11 +40,6 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
     ? 'RECONNECTING'
     : 'OFFLINE';
 
-  // Gateway uptime = (server now) - gatewayStartedAt
-  const gatewayUptimeSecs = gatewayStartedAt && serverTimeOffset !== null
-    ? Math.floor((now + serverTimeOffset - gatewayStartedAt) / 1000)
-    : null;
-
   return (
     <div className="shell-panel mx-2 mb-2 flex min-h-10 flex-wrap items-center gap-y-1 overflow-hidden rounded-2xl px-3 py-2 text-[0.667rem] text-muted-foreground shrink-0 select-none max-[378px]:min-h-9 max-[378px]:gap-y-0.5 max-[378px]:px-2.5 max-[378px]:py-1.5 max-[378px]:text-[0.6rem] sm:mx-4 sm:mb-3 sm:flex-nowrap sm:gap-y-0 sm:overflow-x-auto sm:px-4 sm:text-[0.733rem]">
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1 overflow-visible whitespace-normal max-[378px]:gap-x-2 max-[378px]:gap-y-0.5 sm:flex-nowrap sm:gap-x-3 sm:gap-y-0 sm:whitespace-nowrap">
@@ -117,21 +53,6 @@ export function StatusBar({ connectionState, sessionCount, sparkline, contextTok
         >
           <span className="text-[0.533rem] max-[378px]:text-[0.4375rem]" aria-hidden="true">●</span>
           <span>{statusLabel}</span>
-        </span>
-
-        <span className="text-border max-[378px]:text-[0.533rem]">•</span>
-
-        {/* Session count */}
-        <span className="shrink-0 text-foreground/78 max-[378px]:text-[0.6rem]">
-          <span className="font-mono tabular-nums text-foreground">{sessionCount}</span>
-          <span className="ml-1 sm:hidden">sessions</span>
-          <span className="ml-1 hidden sm:inline">active sessions</span>
-        </span>
-
-        {/* Gateway uptime (hidden on narrow/medium screens) */}
-        <span className="hidden text-border lg:inline">•</span>
-        <span className="hidden text-foreground/72 lg:inline">
-          Uptime <span className="font-mono tabular-nums">{gatewayUptimeSecs !== null ? formatUptime(gatewayUptimeSecs) : '--:--:--'}</span>
         </span>
 
         {/* Context Meter (always visible when available) */}
