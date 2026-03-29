@@ -15,7 +15,7 @@ import {
   lazy,
   Suspense,
 } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCw, PlugZap, Mic, Loader2, Square, SidebarOpen, PanelLeftClose } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, RotateCw, PlugZap, Mic, Loader2, Square, SidebarOpen } from 'lucide-react';
 import type { SearchMatchTarget } from '@/features/chat/useMessageSearch';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
@@ -1084,18 +1084,6 @@ export default function App({ onLogout }: AppProps) {
   const renderSidebarPanels = (onSelect: (key: string) => Promise<void> | void) => (
     <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
       <div className="shell-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[28px]">
-        <div className="panel-header flex items-center justify-between border-l-[3px] border-l-primary/55 px-3 py-2.5">
-          <div className="text-[0.64rem] font-mono font-semibold uppercase tracking-[0.24em] text-muted-foreground">Chat History</div>
-          <button
-            type="button"
-            onClick={handleToggleChatHistory}
-            className="shell-icon-button size-10 px-0"
-            title="Collapse chat history"
-            aria-label="Collapse chat history"
-          >
-            <PanelLeftClose size={16} />
-          </button>
-        </div>
         <PanelErrorBoundary name="Chat History">
           <SessionList
             displayMode="chat"
@@ -1110,6 +1098,7 @@ export default function App({ onLogout }: AppProps) {
             onSpawn={handleSpawnSession}
             onRename={renameSession}
             onAbort={abortSession}
+            onCollapse={handleToggleChatHistory}
             isLoading={sessionsLoading}
             agentName={agentName}
           />

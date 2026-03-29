@@ -18,7 +18,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Plus, Search, X } from 'lucide-react';
+import { AlertTriangle, PanelLeftClose, Plus, Search, X } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 
 interface SessionListProps {
@@ -34,6 +34,7 @@ interface SessionListProps {
   onSpawn?: (opts: SpawnSessionOpts) => Promise<void | boolean>;
   onRename?: (sessionKey: string, label: string) => Promise<void>;
   onAbort?: (sessionKey: string) => Promise<void>;
+  onCollapse?: () => void;
   isLoading?: boolean;
   agentName?: string;
   /** Render in compact dropdown mode (chat-first topbar panel). */
@@ -124,7 +125,7 @@ function buildSearchSnippet(messages: ChatMessage[], query: string): { snippet: 
 }
 
 /** Sidebar list of agent sessions with tree structure and context menus. */
-export function SessionList({ displayMode = 'session', sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onSelectSearchResult, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
+export function SessionList({ displayMode = 'session', sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onSelectSearchResult, onDelete, onSpawn, onRename, onAbort, onCollapse, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
   const { connectionState, rpc } = useGateway();
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -340,7 +341,7 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
           <span className="panel-diamond">◆</span>
           {displayMode === 'chat' ? 'CHAT HISTORY' : 'AGENTS'}
         </span>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-1.5">
           {displayMode === 'chat' && (
             <button
               type="button"
@@ -371,6 +372,17 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
               className="shell-icon-button size-10 px-0"
             >
               <Plus size={16} />
+            </button>
+          )}
+          {displayMode === 'chat' && onCollapse && !compact && (
+            <button
+              type="button"
+              onClick={onCollapse}
+              aria-label="Collapse chat history"
+              title="Collapse chat history"
+              className="shell-icon-button size-10 px-0"
+            >
+              <PanelLeftClose size={16} />
             </button>
           )}
         </div>
