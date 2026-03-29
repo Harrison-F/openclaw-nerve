@@ -50,10 +50,6 @@ interface ChatPanelProps {
   onToggleToolPanel?: () => void;
   /** Whether the tool panel is currently collapsed. */
   isToolPanelCollapsed?: boolean;
-  /** Toggle the chat history rail. */
-  onToggleChatHistory?: () => void;
-  /** Whether chat history is currently collapsed. */
-  isChatHistoryCollapsed?: boolean;
   /** Currently selected tool in the panel. */
   selectedToolId?: string | null;
   /** Select a tool for the panel. */
@@ -87,7 +83,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
   onToggleToolPanel, isToolPanelCollapsed = false,
-  onToggleChatHistory, isChatHistoryCollapsed = false,
   selectedToolId = null, onSelectTool,
   onOpenWorkspacePath,
   searchTarget = null,
@@ -301,8 +296,6 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         isMobileTopBarHidden={isMobileTopBarHidden}
         onToggleToolPanel={onToggleToolPanel}
         isToolPanelCollapsed={isToolPanelCollapsed}
-        onToggleChatHistory={onToggleChatHistory}
-        isChatHistoryCollapsed={isChatHistoryCollapsed}
         selectedToolId={selectedToolId}
         onSelectTool={onSelectTool}
       />

@@ -321,7 +321,7 @@ export default function App({ onLogout }: AppProps) {
   }, []);
 
   const setToolPanelWidth = useCallback((nextWidth: number) => {
-    const clamped = Math.max(320, Math.min(1200, Math.round(nextWidth)));
+    const clamped = Math.max(240, Math.min(1600, Math.round(nextWidth)));
     setToolPanelWidthState(clamped);
     try {
       localStorage.setItem(TOOL_PANEL_WIDTH_STORAGE_KEY, String(clamped));
@@ -343,6 +343,11 @@ export default function App({ onLogout }: AppProps) {
   const handleToggleToolPanel = useCallback(() => {
     setToolPanelCollapsed(prev => !prev);
   }, [setToolPanelCollapsed]);
+
+  const handleSetToolPanelWidthManual = useCallback((nextWidth: number) => {
+    setToolPanelManualWidth(true);
+    setToolPanelWidth(nextWidth);
+  }, [setToolPanelWidth]);
 
   const setChatHistoryCollapsed = useCallback((nextCollapsed: boolean | ((prev: boolean) => boolean)) => {
     setChatHistoryCollapsedState(prevCollapsed => {
@@ -538,6 +543,7 @@ export default function App({ onLogout }: AppProps) {
     baselineWidth: null,
   });
   const [chatToolRegionWidth, setChatToolRegionWidth] = useState<number | null>(null);
+  const [toolPanelManualWidth, setToolPanelManualWidth] = useState(false);
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
   const activeChatPaneRef = useRef<HTMLDivElement | null>(null);
@@ -984,10 +990,10 @@ export default function App({ onLogout }: AppProps) {
       return;
     }
 
-    if (Math.abs(toolPanelWidth - exactHalfWidth) > 2) {
+    if (!toolPanelManualWidth && Math.abs(toolPanelWidth - exactHalfWidth) > 2) {
       setToolPanelWidth(exactHalfWidth);
     }
-  }, [chatToolRegionWidth, desktopRightPanelWidth, setToolPanelWidth, toolPanelChatBaselineWidth, toolPanelCollapsed, toolPanelWidth]);
+  }, [chatToolRegionWidth, desktopRightPanelWidth, setToolPanelWidth, toolPanelChatBaselineWidth, toolPanelCollapsed, toolPanelManualWidth, toolPanelWidth]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1063,8 +1069,6 @@ export default function App({ onLogout }: AppProps) {
             isMobileTopBarHidden={isMobileTopBarHidden}
             onToggleToolPanel={handleToggleToolPanel}
             isToolPanelCollapsed={toolPanelCollapsed}
-            onToggleChatHistory={handleToggleChatHistory}
-            isChatHistoryCollapsed={chatHistoryCollapsed}
             selectedToolId={selectedToolId}
             onSelectTool={setSelectedToolId}
             onOpenWorkspacePath={openWorkspacePath}
@@ -1087,6 +1091,18 @@ export default function App({ onLogout }: AppProps) {
   const renderSidebarPanels = (onSelect: (key: string) => Promise<void> | void) => (
     <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
       <div className="shell-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[28px]">
+        <div className="panel-header flex items-center justify-between border-l-[3px] border-l-primary/55 px-3 py-2.5">
+          <div className="text-[0.64rem] font-mono font-semibold uppercase tracking-[0.24em] text-muted-foreground">Chat History</div>
+          <button
+            type="button"
+            onClick={handleToggleChatHistory}
+            className="shell-icon-button size-10 px-0"
+            title="Collapse chat history"
+            aria-label="Collapse chat history"
+          >
+            <PanelLeftClose size={16} />
+          </button>
+        </div>
         <PanelErrorBoundary name="Chat History">
           <SessionList
             displayMode="chat"

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen, SidebarClose, SidebarOpen } from 'lucide-react';
+import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { TOOL_DEFINITIONS } from '@/features/tools/toolRegistry';
 import { useModelEffort } from './useModelEffort';
@@ -22,10 +22,6 @@ interface ChatHeaderProps {
   onToggleToolPanel?: () => void;
   /** Whether the tools panel is currently collapsed. */
   isToolPanelCollapsed?: boolean;
-  /** Toggle the chat history rail. */
-  onToggleChatHistory?: () => void;
-  /** Whether chat history is currently collapsed. */
-  isChatHistoryCollapsed?: boolean;
   /** Currently selected tool id. */
   selectedToolId?: string | null;
   /** Pick a tool from the header menu. */
@@ -48,8 +44,6 @@ export function ChatHeader({
   isFileBrowserCollapsed = true,
   onToggleMobileTopBar,
   isMobileTopBarHidden = false,
-  onToggleChatHistory,
-  isChatHistoryCollapsed = false,
   selectedToolId = null,
   onSelectTool,
 }: ChatHeaderProps) {
@@ -177,20 +171,8 @@ export function ChatHeader({
             options={effortOptions}
           />
         </div>
-        {(onToggleChatHistory || onSelectTool) && (
+        {onSelectTool && (
           <div className="flex min-w-0 shrink-0 items-center gap-1 sm:gap-1.5">
-            {onToggleChatHistory && (
-              <button
-                type="button"
-                onClick={onToggleChatHistory}
-                className="cockpit-toolbar-button min-h-11 px-3 sm:min-h-9 sm:px-3"
-                title={isChatHistoryCollapsed ? 'Open chat history' : 'Collapse chat history'}
-                aria-label={isChatHistoryCollapsed ? 'Open chat history' : 'Collapse chat history'}
-              >
-                {isChatHistoryCollapsed ? <SidebarOpen size={14} aria-hidden="true" /> : <SidebarClose size={14} aria-hidden="true" />}
-                <span className="hidden md:inline">History</span>
-              </button>
-            )}
             <InlineSelect
               value={selectedToolId ?? '__none__'}
               onChange={(nextValue) => {
