@@ -1342,37 +1342,42 @@ export default function App({ onLogout }: AppProps) {
         ) : (
           <div style={{ display: viewMode === 'kanban' ? 'none' : 'contents' }}>
             <ResizablePanels
-              leftPercent={76}
-              onResize={() => {}}
-              minLeftPercent={45}
+              leftPercent={panelRatio}
+              leftWidthPx={DEFAULT_CHAT_HISTORY_WIDTH_PX}
+              onResize={setPanelRatio}
+              minLeftPercent={30}
               maxLeftPercent={85}
-              rightWidthPx={toolPanelCollapsed ? TOOL_PANEL_RAIL_WIDTH_PX : (toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2)))}
-              onRightWidthChange={toolPanelCollapsed ? undefined : setToolPanelWidth}
-              left={(
-                <ResizablePanels
-                  leftPercent={panelRatio}
-                  leftWidthPx={DEFAULT_CHAT_HISTORY_WIDTH_PX}
-                  onResize={setPanelRatio}
-                  minLeftPercent={30}
-                  maxLeftPercent={85}
-                  rightWidthPx={toolPanelCollapsed ? (fileBrowserCollapsed ? desktopRightPanelWidth : null) : (toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2)))}
-                  onRightWidthChange={fileBrowserCollapsed || !toolPanelCollapsed ? undefined : setDesktopRightPanelWidth}
-                  leftClassName="boot-panel flex flex-col"
-                  rightClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
-                  left={renderSidebarPanels(handleSessionChange)}
-                  right={<div ref={activeChatPaneRef} className="h-full min-h-0">{chatContent}</div>}
-                />
-              )}
+              rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
+              onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
+              leftClassName="boot-panel flex flex-col"
               rightClassName="boot-panel flex flex-col"
+              left={renderSidebarPanels(handleSessionChange)}
               right={(
-                <div ref={activeToolPaneRef} className="h-full min-h-0">
-                  <ToolPanel
-                    collapsed={toolPanelCollapsed}
-                    onCollapseChange={setToolPanelCollapsed}
-                    selectedToolId={selectedToolId}
-                    onSelectTool={setSelectedToolId}
-                    debugMetrics={toolPanelDebugMetrics}
-                  />
+                <div className="flex h-full min-h-0 min-w-0 gap-3 overflow-hidden">
+                  <div
+                    ref={activeChatPaneRef}
+                    className="shell-panel boot-panel min-h-0 overflow-hidden rounded-[28px]"
+                    style={toolPanelCollapsed
+                      ? { flex: '1 1 auto', minWidth: 0 }
+                      : { flex: '0 0 auto', width: `${toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2))}px`, minWidth: 0 }}
+                  >
+                    {chatContent}
+                  </div>
+                  <div
+                    ref={activeToolPaneRef}
+                    className="boot-panel min-h-0"
+                    style={toolPanelCollapsed
+                      ? { flex: '0 0 auto', width: `${TOOL_PANEL_RAIL_WIDTH_PX}px`, minWidth: 0 }
+                      : { flex: '0 0 auto', width: `${toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2))}px`, minWidth: 0 }}
+                  >
+                    <ToolPanel
+                      collapsed={toolPanelCollapsed}
+                      onCollapseChange={setToolPanelCollapsed}
+                      selectedToolId={selectedToolId}
+                      onSelectTool={setSelectedToolId}
+                      debugMetrics={toolPanelDebugMetrics}
+                    />
+                  </div>
                 </div>
               )}
             />
