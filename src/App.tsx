@@ -53,6 +53,7 @@ const CommandPalette = lazy(() => import('@/features/command-palette/CommandPale
 const SessionList = lazy(() => import('@/features/sessions/SessionList').then(m => ({ default: m.SessionList })));
 // Lazy-loaded view modes
 const KanbanPanel = lazy(() => import('@/features/kanban/KanbanPanel').then(m => ({ default: m.KanbanPanel })));
+const MobileShell = lazy(() => import('@/mobile/MobileShell'));
 
 interface AppProps {
   onLogout?: () => void;
@@ -77,6 +78,7 @@ const CHAT_HISTORY_WIDTH_STORAGE_KEY = 'nerve-chat-history-width';
 const TOOL_PANEL_RAIL_WIDTH_PX = 56;
 const CHAT_HISTORY_RAIL_WIDTH_PX = 56;
 const SHARED_WORKSPACE_AGENT_ID = 'main';
+const MOBILE_ROUTE_PATH = '/m';
 
 function buildWorkspaceSwitchErrorMessage(result: {
   failedPath?: string;
@@ -90,6 +92,7 @@ function buildWorkspaceSwitchErrorMessage(result: {
 }
 
 export default function App({ onLogout }: AppProps) {
+  const isMobileRoute = typeof window !== 'undefined' && window.location.pathname === MOBILE_ROUTE_PATH;
   // Gateway state
   const {
     connectionState, connectError, reconnectAttempt, model, sparkline,
@@ -1168,6 +1171,54 @@ export default function App({ onLogout }: AppProps) {
   );
 
   const chatHistoryPanel = renderSidebarPanels(handleSessionChange);
+
+  if (isMobileRoute) {
+    return (
+      <Suspense fallback={<div className="flex h-screen items-center justify-center text-sm text-muted-foreground">Loading mobile Nerve…</div>}>
+        <MobileShell
+          sessions={visibleTopLevelChats}
+          currentSession={currentSession}
+          onSelectSession={handleSessionChange}
+          busyState={busyState}
+          agentStatus={agentStatus}
+          unreadSessions={unreadSessions}
+          onSelectSearchResult={handleSelectChatSearchResult}
+          onDeleteSession={deleteSession}
+          onSpawnSession={handleSpawnSession}
+          onRenameSessionList={renameSession}
+          onAbortSession={abortSession}
+          sessionsLoading={sessionsLoading}
+          agentName={agentName}
+          messages={messages}
+          onSend={handleSend}
+          onAbort={handleAbort}
+          isGenerating={isGenerating}
+          stream={stream}
+          processingStage={processingStage}
+          lastEventTimestamp={lastEventTimestamp}
+          currentToolDescription={currentToolDescription}
+          activityLog={activityLog}
+          onWakeWordState={handleWakeWordState}
+          onReset={handleReset}
+          agentDisplayName={currentSessionDisplayName}
+          sessionTitle={currentSessionDisplayName}
+          onRenameCurrentSession={handleRenameCurrentSession}
+          loadMore={loadMore}
+          hasMore={hasMore}
+          searchTarget={activeChatSearchTarget}
+          voiceState={voiceState}
+          interimTranscript={interimTranscript}
+          startRecording={handleStartPersistentRecording}
+          stopAndTranscribe={stopAndTranscribe}
+          wakeWordEnabled={voiceWakeWordEnabled}
+          toggleWakeWord={toggleWakeWord}
+          voiceError={voiceError}
+          clearVoiceError={clearVoiceError}
+          voiceOriginSessionKey={voiceOriginSessionKey}
+        />
+      </Suspense>
+    );
+  }
 
   const compactWorkspacePanel = undefined;
 
