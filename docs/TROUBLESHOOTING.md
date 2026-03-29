@@ -619,3 +619,105 @@ systemctl restart nerve
 ## Known Limitations
 
 None currently tracked.
+
+---
+
+## Layout / Embed Debugging
+
+### Tool panel width is visibly wrong even though the code "looks right"
+
+**Symptom:** The chat pane and tool pane do not match the intended widths, even after changing splitter math.
+
+**Root cause pattern:** The rendered DOM width is often constrained by a different parent than the one the React code is reasoning about. In practice, there may be multiple nested flex containers and stored widths, so code-level assumptions can drift from the browser's actual applied layout.
+
+**Correct debugging workflow (do this before more layout edits):**
+1. Measure the live DOM in a browser session — do not infer from React state alone.
+2. Log into Nerve with Playwright and query the actual pane wrappers with `getBoundingClientRect()`.
+3. Walk up the ancestor chain of the measured element until you find the parent container that is constraining the width.
+4. Drive pane widths from the measured parent region, not from stale inferred "baseline" state.
+
+**Why:** In one real case, the parent chat+tool container had ~1235 px available, but both children were stuck at the 320 px fallback. The problem was not lack of space — it was that child widths were being driven by the wrong state source.
+
+**Playwright measurement pattern:**
+Use a real browser session and measure the wrappers directly:
+```python
+from playwright.sync_api import sync_playwright
+
+with sync_playwright() as p:
+    browser = p.chromium.launch(headless=True)
+    page = browser.new_page(viewport={"width": 1728, "height": 1117})
+    page.goto("http://127.0.0.1:3080/", wait_until="networkidle")
+    page.get_by_label("Password").fill("<gateway-token-or-password>")
+    page.get_by_role("button", name="Enter Nerve").click()
+    page.wait_for_load_state("networkidle")
+    metrics = page.evaluate("""() => {
+      const measure = (id) => {
+        const el = document.getElementById(id);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      return {
+        chat: measure('chat-pane-width-target'),
+        tool: measure('tool-pane-width-target'),
+      };
+    }""")
+    print(metrics)
+    browser.close()
+```
+
+**If the direct element measurements still look wrong:** inspect ancestors, not just the child node:
+```python
+chain = page.evaluate("""() => {
+  const out = [];
+  let el = document.getElementById('chat-pane-width-target');
+  while (el && out.length < 8) {
+    const r = el.getBoundingClientRect();
+    const cs = getComputedStyle(el);
+    out.push({
+      tag: el.tagName.toLowerCase(),
+      id: el.id || null,
+      cls: String(el.className || ''),
+      width: r.width,
+      display: cs.display,
+      flex: cs.flex,
+      flexBasis: cs.flexBasis,
+      minWidth: cs.minWidth,
+      maxWidth: cs.maxWidth,
+    });
+    el = el.parentElement;
+  }
+  return out;
+}""")
+print(chain)
+```
+
+**Implementation lesson:** Prefer explicit DOM targets (for example `id="chat-pane-width-target"` and `id="tool-pane-width-target"`) while debugging. They make Playwright measurement reliable and avoid accidentally inspecting a nested child that happens to be highlighted in DevTools.
+
+### Tool panel iframe exists but the dashboard still doesn't load
+
+**Symptom:** The iframe is present, but the content is blank or replaced with `chrome-error://chromewebdata/`.
+
+**Correct debugging workflow:**
+1. Measure the iframe `src` actually being rendered.
+2. Capture browser-side request failures with Playwright `requestfailed`.
+3. Check response headers on the target dashboard (`X-Frame-Options`, `Content-Security-Policy`, TLS/cert issues).
+
+**Real failure modes observed:**
+- `net::ERR_CERT_AUTHORITY_INVALID` when embedding local dashboards over HTTPS with certificates not trusted by the browsing environment.
+- `X-Frame-Options: SAMEORIGIN` on a dashboard server blocks embedding from Nerve when Nerve is on a different origin (different port counts as a different origin).
+
+**Playwright capture pattern:**
+```python
+failed = []
+page.on('requestfailed', lambda r: failed.append((r.url, r.failure)))
+# ... trigger the tool iframe ...
+print(failed)
+```
+
+**Official browser security facts to remember:**
+- `getBoundingClientRect()` returns live pixel geometry from the browser DOM.
+- `X-Frame-Options: SAMEORIGIN` only allows embedding when scheme + host + port all match.
+- Different ports are different origins.
+
+**Practical integration advice:** if a dashboard is meant to behave like part of Nerve rather than a separate site, the cleanest path is usually a same-origin Nerve proxy route (for example `/tools/apartment/...`) rather than cross-origin iframe URLs on separate ports.
