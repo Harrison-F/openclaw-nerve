@@ -481,8 +481,21 @@ export default function App({ onLogout }: AppProps) {
       return null;
     }
   });
+  const [toolPanelDebugMetrics, setToolPanelDebugMetrics] = useState<{
+    chatWidth: number | null;
+    toolWidth: number | null;
+    combinedWidth: number | null;
+    baselineWidth: number | null;
+  }>({
+    chatWidth: null,
+    toolWidth: null,
+    combinedWidth: null,
+    baselineWidth: null,
+  });
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
+  const activeChatPaneRef = useRef<HTMLDivElement | null>(null);
+  const activeToolPaneRef = useRef<HTMLDivElement | null>(null);
 
   // Gateway restart
   const {
@@ -913,6 +926,29 @@ export default function App({ onLogout }: AppProps) {
     }
   }, [desktopRightPanelWidth, setToolPanelWidth, toolPanelChatBaselineWidth, toolPanelWidth]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const updateMetrics = () => {
+      const chatWidth = activeChatPaneRef.current ? Math.round(activeChatPaneRef.current.getBoundingClientRect().width) : null;
+      const toolWidth = activeToolPaneRef.current ? Math.round(activeToolPaneRef.current.getBoundingClientRect().width) : null;
+      setToolPanelDebugMetrics({
+        chatWidth,
+        toolWidth,
+        combinedWidth: chatWidth !== null && toolWidth !== null ? chatWidth + toolWidth : null,
+        baselineWidth: toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? null,
+      });
+    };
+
+    updateMetrics();
+
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => updateMetrics());
+    if (activeChatPaneRef.current) observer.observe(activeChatPaneRef.current);
+    if (activeToolPaneRef.current) observer.observe(activeToolPaneRef.current);
+    return () => observer.disconnect();
+  }, [desktopRightPanelWidth, toolPanelChatBaselineWidth, toolPanelCollapsed, toolPanelWidth]);
+
   const visibleSaveToast = saveToast?.agentId === sharedWorkspaceAgentId
     && saveToast.workspaceVersion === workspaceVersion
     ? saveToast
@@ -1300,7 +1336,7 @@ export default function App({ onLogout }: AppProps) {
           </div>
         )}
         {isCompactLayout ? (
-          <div className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
+          <div ref={activeChatPaneRef} className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
             {chatContent}
           </div>
         ) : (
@@ -1324,17 +1360,20 @@ export default function App({ onLogout }: AppProps) {
                   leftClassName="boot-panel flex flex-col"
                   rightClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
                   left={renderSidebarPanels(handleSessionChange)}
-                  right={chatContent}
+                  right={<div ref={activeChatPaneRef} className="h-full min-h-0">{chatContent}</div>}
                 />
               )}
               rightClassName="boot-panel flex flex-col"
               right={(
-                <ToolPanel
-                  collapsed={toolPanelCollapsed}
-                  onCollapseChange={setToolPanelCollapsed}
-                  selectedToolId={selectedToolId}
-                  onSelectTool={setSelectedToolId}
-                />
+                <div ref={activeToolPaneRef} className="h-full min-h-0">
+                  <ToolPanel
+                    collapsed={toolPanelCollapsed}
+                    onCollapseChange={setToolPanelCollapsed}
+                    selectedToolId={selectedToolId}
+                    onSelectTool={setSelectedToolId}
+                    debugMetrics={toolPanelDebugMetrics}
+                  />
+                </div>
               )}
             />
           </div>

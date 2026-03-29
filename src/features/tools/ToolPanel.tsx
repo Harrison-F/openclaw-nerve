@@ -9,9 +9,15 @@ interface ToolPanelProps {
   onCollapseChange: (collapsed: boolean) => void;
   selectedToolId: string | null;
   onSelectTool: (toolId: string | null) => void;
+  debugMetrics?: {
+    chatWidth: number | null;
+    toolWidth: number | null;
+    combinedWidth: number | null;
+    baselineWidth: number | null;
+  };
 }
 
-export function ToolPanel({ collapsed, onCollapseChange, selectedToolId, onSelectTool }: ToolPanelProps) {
+export function ToolPanel({ collapsed, onCollapseChange, selectedToolId, onSelectTool, debugMetrics }: ToolPanelProps) {
   const [frameKey, setFrameKey] = useState(0);
   const selectedTool = useMemo(() => getToolDefinition(selectedToolId), [selectedToolId]);
 
@@ -112,6 +118,15 @@ export function ToolPanel({ collapsed, onCollapseChange, selectedToolId, onSelec
         >
           <PanelRightClose size={16} />
         </button>
+      </div>
+
+      <div className="border-b border-border/55 bg-background/45 px-3 py-2 text-[0.68rem] font-mono text-muted-foreground">
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          <span>Chat: <span className="text-foreground">{debugMetrics?.chatWidth ?? '—'}px</span></span>
+          <span>Tool: <span className="text-foreground">{debugMetrics?.toolWidth ?? '—'}px</span></span>
+          <span>Total: <span className="text-foreground">{debugMetrics?.combinedWidth ?? '—'}px</span></span>
+          <span>Baseline: <span className="text-foreground">{debugMetrics?.baselineWidth ?? '—'}px</span></span>
+        </div>
       </div>
 
       {!selectedTool ? (
