@@ -1,8 +1,10 @@
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
-import type { Session } from '@/types';
+import type { Session, ChatHistoryResponse, ChatMessage } from '@/types';
 import { getSessionKey } from '@/types';
 import type { SpawnSessionOpts } from '@/contexts/SessionContext';
 import { SessionSkeletonGroup } from '@/components/skeletons';
+import { useGateway } from '@/contexts/GatewayContext';
+import { extractText } from '@/utils/helpers';
 import { buildSessionTree, flattenTree, getSessionType } from './sessionTree';
 import { getSessionDisplayLabel, isTopLevelAgentSessionKey } from './sessionKeys';
 import { SessionNode } from './SessionNode';
@@ -16,7 +18,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { AlertTriangle, Plus, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { SpawnAgentDialog } from './SpawnAgentDialog';
 
 interface SessionListProps {
@@ -38,6 +40,14 @@ interface SessionListProps {
   compact?: boolean;
 }
 
+type SearchMode = 'titles' | 'all';
+
+type SessionSearchResult = {
+  sessionKey: string;
+  kind: 'title' | 'content';
+  snippet?: string;
+};
+
 function countDescendants(node: ReturnType<typeof buildSessionTree>[number]): number {
   return node.children.reduce((total, child) => total + 1 + countDescendants(child), 0);
 }
@@ -52,8 +62,34 @@ function findNodeByKey(nodes: ReturnType<typeof buildSessionTree>, key: string):
   return null;
 }
 
+function normalizeSearchValue(value: string): string {
+  return value.trim().toLocaleLowerCase();
+}
+
+function buildSearchSnippet(messages: ChatMessage[], query: string): string | null {
+  const normalizedQuery = normalizeSearchValue(query);
+  if (!normalizedQuery) return null;
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const text = extractText(messages[index]).replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const normalizedText = text.toLocaleLowerCase();
+    const matchIndex = normalizedText.indexOf(normalizedQuery);
+    if (matchIndex === -1) continue;
+
+    const start = Math.max(0, matchIndex - 42);
+    const end = Math.min(text.length, matchIndex + normalizedQuery.length + 78);
+    const prefix = start > 0 ? '…' : '';
+    const suffix = end < text.length ? '…' : '';
+    return `${prefix}${text.slice(start, end).trim()}${suffix}`;
+  }
+
+  return null;
+}
+
 /** Sidebar list of agent sessions with tree structure and context menus. */
 export function SessionList({ displayMode = 'session', sessions, currentSession, busyState, agentStatus, unreadSessions, onSelect, onRefresh, onDelete, onSpawn, onRename, onAbort, isLoading, agentName = 'Agent', compact = false }: SessionListProps) {
+  const { connectionState, rpc } = useGateway();
   const [deleteTarget, setDeleteTarget] = useState<{ key: string; label: string; descendantCount: number; isRootAgent: boolean } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [spawnOpen, setSpawnOpen] = useState(false);
@@ -61,6 +97,14 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement>(null);
   const [expandedState, setExpandedState] = useState<Record<string, boolean>>({});
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchMode, setSearchMode] = useState<SearchMode>('titles');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Record<string, SessionSearchResult>>({});
+  const [searchLoading, setSearchLoading] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const historySearchCacheRef = useRef<Map<string, { updatedAt?: number; messages: ChatMessage[] }>>(new Map());
+  const searchRunIdRef = useRef(0);
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget || !onDelete) return;
@@ -101,6 +145,11 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
   const handleToggleExpand = useCallback((key: string) => {
     setExpandedState((prev) => ({ ...prev, [key]: !(prev[key] ?? true) }));
   }, []);
+
+  useEffect(() => {
+    if (!searchOpen) return;
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  }, [searchOpen]);
 
   const prevPercentsRef = useRef<Record<string, number>>({});
   const prevTokensRef = useRef<Record<string, number>>({});
@@ -147,6 +196,102 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
     });
   }, [tree]);
 
+  const normalizedSearchQuery = useMemo(() => normalizeSearchValue(searchQuery), [searchQuery]);
+
+  useEffect(() => {
+    if (!searchOpen || !normalizedSearchQuery) {
+      setSearchResults({});
+      setSearchLoading(false);
+      return;
+    }
+
+    const titleMatches = new Map<string, SessionSearchResult>();
+    const titleMisses: Session[] = [];
+
+    sessions.forEach((session) => {
+      const sessionKey = getSessionKey(session);
+      const label = getSessionDisplayLabel(session, agentName);
+      if (normalizeSearchValue(label).includes(normalizedSearchQuery)) {
+        titleMatches.set(sessionKey, { sessionKey, kind: 'title' });
+      } else {
+        titleMisses.push(session);
+      }
+    });
+
+    if (searchMode === 'titles') {
+      setSearchResults(Object.fromEntries(Array.from(titleMatches.entries())));
+      setSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const runId = searchRunIdRef.current + 1;
+    searchRunIdRef.current = runId;
+    setSearchResults(Object.fromEntries(Array.from(titleMatches.entries())));
+    setSearchLoading(true);
+
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const contentMatches = new Map(titleMatches);
+
+        for (const session of titleMisses) {
+          const sessionKey = getSessionKey(session);
+          if (!sessionKey) continue;
+
+          const cached = historySearchCacheRef.current.get(sessionKey);
+          const sessionUpdatedAt = typeof session.updatedAt === 'number' ? session.updatedAt : undefined;
+          let messages = cached?.messages;
+
+          if (!messages || (sessionUpdatedAt && cached?.updatedAt !== sessionUpdatedAt)) {
+            try {
+              const history = await rpc('chat.history', { sessionKey, limit: 250 }) as ChatHistoryResponse;
+              messages = history.messages || [];
+              historySearchCacheRef.current.set(sessionKey, { updatedAt: sessionUpdatedAt, messages });
+            } catch {
+              messages = [];
+            }
+          }
+
+          const snippet = buildSearchSnippet(messages || [], normalizedSearchQuery);
+          if (snippet) {
+            contentMatches.set(sessionKey, { sessionKey, kind: 'content', snippet });
+          }
+        }
+
+        if (cancelled || searchRunIdRef.current !== runId) return;
+        setSearchResults(Object.fromEntries(Array.from(contentMatches.entries())));
+        setSearchLoading(false);
+      })();
+    }, 220);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [agentName, normalizedSearchQuery, rpc, searchMode, searchOpen, sessions]);
+
+  const displayedNodes = useMemo(() => {
+    if (!searchOpen || !normalizedSearchQuery) return flatNodes;
+
+    const titleRank = (result?: SessionSearchResult) => (result?.kind === 'title' ? 0 : 1);
+    return flatNodes
+      .filter((node) => Boolean(searchResults[node.key]))
+      .sort((a, b) => {
+        const resultA = searchResults[a.key];
+        const resultB = searchResults[b.key];
+        const rankDiff = titleRank(resultA) - titleRank(resultB);
+        if (rankDiff !== 0) return rankDiff;
+
+        const sessionA = sessions.find((session) => getSessionKey(session) === a.key);
+        const sessionB = sessions.find((session) => getSessionKey(session) === b.key);
+        const updatedA = typeof sessionA?.updatedAt === 'number' ? sessionA.updatedAt : 0;
+        const updatedB = typeof sessionB?.updatedAt === 'number' ? sessionB.updatedAt : 0;
+        return updatedB - updatedA;
+      });
+  }, [flatNodes, normalizedSearchQuery, searchOpen, searchResults, sessions]);
+
+  const searchHasNoResults = searchOpen && normalizedSearchQuery.length > 0 && !searchLoading && displayedNodes.length === 0;
+
   return (
     <div className={compact ? 'flex flex-col max-h-[65vh]' : 'h-full flex flex-col min-h-0'}>
       <div className="panel-header border-l-[3px] border-l-info">
@@ -155,6 +300,27 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
           {displayMode === 'chat' ? 'CHAT HISTORY' : 'AGENTS'}
         </span>
         <div className="ml-auto flex items-center gap-2">
+          {displayMode === 'chat' && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchOpen((prev) => {
+                  const next = !prev;
+                  if (!next) {
+                    setSearchQuery('');
+                    setSearchResults({});
+                    setSearchLoading(false);
+                  }
+                  return next;
+                });
+              }}
+              aria-label={searchOpen ? 'Close chat search' : 'Search chat history'}
+              title={searchOpen ? 'Close chat search' : 'Search chat history'}
+              className="shell-icon-button size-10 px-0"
+            >
+              {searchOpen ? <X size={16} /> : <Search size={16} />}
+            </button>
+          )}
           {onSpawn && (
             <button
               type="button"
@@ -177,12 +343,60 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
           </button>
         </div>
       </div>
+      {displayMode === 'chat' && searchOpen && (
+        <div className="border-b border-border/60 bg-card/70 px-3 py-3">
+          <div className="flex items-center gap-2 rounded-2xl border border-border/70 bg-background/70 px-3 py-2">
+            <Search size={14} className="shrink-0 text-muted-foreground" />
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder={searchMode === 'titles' ? 'Search chat titles…' : 'Search titles and chat…'}
+              className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="text-muted-foreground hover:text-foreground"
+                aria-label="Clear search"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSearchMode('titles')}
+              className={`rounded-full border px-2.5 py-1 text-[0.667rem] font-medium ${searchMode === 'titles' ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/70 text-muted-foreground hover:text-foreground'}`}
+            >
+              Titles
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchMode('all')}
+              className={`rounded-full border px-2.5 py-1 text-[0.667rem] font-medium ${searchMode === 'all' ? 'border-primary/50 bg-primary/10 text-primary' : 'border-border/70 text-muted-foreground hover:text-foreground'}`}
+            >
+              Titles + Chat
+            </button>
+            {searchLoading && connectionState === 'connected' && (
+              <span className="text-[0.667rem] text-muted-foreground">Searching chats…</span>
+            )}
+          </div>
+        </div>
+      )}
       <div className={compact ? 'overflow-y-auto' : 'flex-1 overflow-y-auto'}>
         {isLoading && !sessions.length ? (
           <SessionSkeletonGroup count={4} />
         ) : !sessions.length ? (
           <div className="text-muted-foreground px-3 py-2 text-[0.733rem]">No active sessions</div>
-        ) : flatNodes.map((node) => {
+        ) : searchHasNoResults ? (
+          <div className="px-3 py-3 text-[0.733rem] text-muted-foreground">
+            No chat history matches for <span className="font-medium text-foreground">{searchQuery}</span>.
+          </div>
+        ) : displayedNodes.map((node) => {
           const sessionKey = node.key;
           const sessionType = getSessionType(sessionKey);
           const isSubagent = sessionType === 'subagent';
@@ -197,6 +411,28 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
           const prevTokens = prevTokensRef.current[sessionKey] || 0;
           const displayTokens = Math.max(currentTokens, prevTokens);
           const isExpanded = expandedState[sessionKey] ?? !isCron;
+          const searchResult = searchResults[sessionKey];
+
+          if (searchOpen && normalizedSearchQuery) {
+            return (
+              <button
+                key={sessionKey}
+                type="button"
+                onClick={() => onSelect(sessionKey)}
+                className={`w-full border-b border-border/40 px-3 py-2 text-left transition-colors hover:bg-secondary ${isActive ? 'border-l-[3px] border-l-primary bg-primary/5' : ''}`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-[0.72rem] font-semibold text-foreground">{label}</span>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-bold uppercase tracking-[0.08em] ${searchResult?.kind === 'title' ? 'bg-primary/10 text-primary' : 'bg-secondary text-muted-foreground'}`}>
+                    {searchResult?.kind === 'title' ? 'Title' : 'Chat'}
+                  </span>
+                </div>
+                {searchResult?.snippet && (
+                  <p className="mt-1 line-clamp-2 text-[0.667rem] text-muted-foreground">{searchResult.snippet}</p>
+                )}
+              </button>
+            );
+          }
 
           return (
             <SessionNode
