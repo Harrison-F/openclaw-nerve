@@ -712,12 +712,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       });
 
       const idempotencyKey = `spawn-root-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      await rpc('chat.send', {
-        sessionKey,
-        message: opts.task,
-        deliver: false,
-        idempotencyKey,
-      });
+      if (opts.task.trim()) {
+        await rpc('chat.send', {
+          sessionKey,
+          message: opts.task,
+          deliver: false,
+          idempotencyKey,
+        });
+      }
 
       await refreshSessions();
       setCurrentSession(sessionKey);

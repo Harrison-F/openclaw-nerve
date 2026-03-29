@@ -836,6 +836,15 @@ export default function App({ onLogout }: AppProps) {
     prevLogCount.current = currentCount;
   }, [agentLogEntries.length]);
 
+  const handleCreateNewChat = useCallback(() => {
+    const existingNames = sessions.map(getSessionKey);
+    return handleSpawnSession({
+      kind: 'root',
+      agentName: buildAgentRootSessionKey('chat', existingNames).split('/').pop() || 'chat',
+      task: '',
+    });
+  }, [handleSpawnSession, sessions]);
+
   const handleCompactLayoutChange = useCallback((nextIsCompactLayout: boolean) => {
     setIsCompactLayout(nextIsCompactLayout);
     if (!nextIsCompactLayout) {
@@ -1065,6 +1074,7 @@ export default function App({ onLogout }: AppProps) {
             isMobileTopBarHidden={isMobileTopBarHidden}
             onToggleToolPanel={handleToggleToolPanel}
             isToolPanelCollapsed={toolPanelCollapsed}
+            onNewChat={() => { void handleCreateNewChat(); }}
             selectedToolId={selectedToolId}
             onSelectTool={setSelectedToolId}
             onOpenWorkspacePath={openWorkspacePath}

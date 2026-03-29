@@ -363,12 +363,12 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
               {searchOpen ? <X size={16} /> : <Search size={16} />}
             </button>
           )}
-          {onSpawn && (
+          {onSpawn && displayMode !== 'chat' && (
             <button
               type="button"
               onClick={() => setSpawnOpen(true)}
-              aria-label={displayMode === 'chat' ? 'New chat' : 'Create session'}
-              title={displayMode === 'chat' ? 'New chat' : 'Create session'}
+              aria-label="Create session"
+              title="Create session"
               className="shell-icon-button size-10 px-0"
             >
               <Plus size={16} />
@@ -577,12 +577,12 @@ export function SessionList({ displayMode = 'session', sessions, currentSession,
       </Dialog>
 
       {/* Session creation dialog */}
-      {onSpawn && (
+      {onSpawn && displayMode !== 'chat' && (
         <SpawnAgentDialog
           open={spawnOpen}
           onOpenChange={setSpawnOpen}
           onSpawn={onSpawn}
-          mode={displayMode === 'chat' ? 'root-only' : 'all'}
+          mode="all"
         />
       )}
     </div>

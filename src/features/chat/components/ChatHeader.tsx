@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { TOOL_DEFINITIONS } from '@/features/tools/toolRegistry';
 import { useModelEffort } from './useModelEffort';
@@ -22,6 +22,8 @@ interface ChatHeaderProps {
   onToggleToolPanel?: () => void;
   /** Whether the tools panel is currently collapsed. */
   isToolPanelCollapsed?: boolean;
+  /** Create a new chat immediately. */
+  onNewChat?: () => void;
   /** Currently selected tool id. */
   selectedToolId?: string | null;
   /** Pick a tool from the header menu. */
@@ -44,6 +46,7 @@ export function ChatHeader({
   isFileBrowserCollapsed = true,
   onToggleMobileTopBar,
   isMobileTopBarHidden = false,
+  onNewChat,
   selectedToolId = null,
   onSelectTool,
 }: ChatHeaderProps) {
@@ -112,6 +115,17 @@ export function ChatHeader({
         </button>
       )}
       <div className="flex min-w-0 flex-1 items-center gap-2 pr-1">
+        {onNewChat && (
+          <button
+            type="button"
+            onClick={onNewChat}
+            className="shell-icon-button size-10 shrink-0 px-0"
+            title="New chat"
+            aria-label="New chat"
+          >
+            <Plus size={16} />
+          </button>
+        )}
         <input
           type="text"
           value={draftTitle}
