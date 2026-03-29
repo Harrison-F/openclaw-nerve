@@ -70,7 +70,7 @@ const CHAT_VISIBILITY_STORAGE_KEY = 'nerve-visible-chat-session-keys-v1';
 const CHAT_HISTORY_WIDTH_MIGRATION_KEY = 'nerve-chat-history-width-migrated-v2';
 const DEFAULT_CHAT_HISTORY_PANEL_RATIO = 50;
 const DEFAULT_CHAT_HISTORY_WIDTH_PX = 220;
-const TOOL_PANEL_WIDTH_STORAGE_KEY = 'nerve-tool-panel-width';
+const TOOL_PANEL_WIDTH_STORAGE_KEY = 'nerve-tool-panel-width-v2';
 const TOOL_PANEL_COLLAPSED_STORAGE_KEY = 'nerve-tool-panel-collapsed';
 const TOOL_PANEL_SELECTED_STORAGE_KEY = 'nerve-tool-panel-selected-tool';
 const TOOL_PANEL_RAIL_WIDTH_PX = 56;
@@ -455,7 +455,7 @@ export default function App({ onLogout }: AppProps) {
       const saved = localStorage.getItem(TOOL_PANEL_WIDTH_STORAGE_KEY);
       if (!saved) return null;
       const parsed = Number(saved);
-      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      return Number.isFinite(parsed) && parsed >= 320 ? parsed : null;
     } catch {
       return null;
     }
@@ -869,8 +869,20 @@ export default function App({ onLogout }: AppProps) {
   }, [setSttModel]);
 
   useEffect(() => {
-    if (toolPanelWidth !== null || !desktopRightPanelWidth || desktopRightPanelWidth <= 0) return;
-    setToolPanelWidth(Math.max(320, Math.round(desktopRightPanelWidth * 0.5)));
+    if (!desktopRightPanelWidth || desktopRightPanelWidth <= 0) return;
+
+    const targetDefaultWidth = Math.max(320, Math.round(desktopRightPanelWidth * 0.5));
+
+    if (toolPanelWidth === null) {
+      setToolPanelWidth(targetDefaultWidth);
+      return;
+    }
+
+    // One-time migration guard: if an older saved width is clearly undersized,
+    // lift it to the new default instead of preserving the cramped layout forever.
+    if (toolPanelWidth < Math.max(320, Math.round(targetDefaultWidth * 0.82))) {
+      setToolPanelWidth(targetDefaultWidth);
+    }
   }, [desktopRightPanelWidth, setToolPanelWidth, toolPanelWidth]);
 
   const visibleSaveToast = saveToast?.agentId === sharedWorkspaceAgentId

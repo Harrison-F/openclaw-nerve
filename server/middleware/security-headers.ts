@@ -56,7 +56,7 @@ function getCspDirectives(): string {
     `connect-src ${connectSrc}`,
     "img-src 'self' data: blob:",
     "media-src 'self' blob:",  // Allow blob: URLs for TTS audio playback
-    "frame-src https://s3.tradingview.com https://www.tradingview.com https://www.tradingview-widget.com https://s.tradingview.com",
+    "frame-src 'self' http://localhost:* https://localhost:* http://127.0.0.1:* https://127.0.0.1:* https://s3.tradingview.com https://www.tradingview.com https://www.tradingview-widget.com https://s.tradingview.com",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
