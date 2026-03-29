@@ -492,10 +492,12 @@ export default function App({ onLogout }: AppProps) {
     combinedWidth: null,
     baselineWidth: null,
   });
+  const [chatToolRegionWidth, setChatToolRegionWidth] = useState<number | null>(null);
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
   const activeChatPaneRef = useRef<HTMLDivElement | null>(null);
   const activeToolPaneRef = useRef<HTMLDivElement | null>(null);
+  const chatToolRegionRef = useRef<HTMLDivElement | null>(null);
 
   // Gateway restart
   const {
@@ -910,21 +912,37 @@ export default function App({ onLogout }: AppProps) {
   }, [desktopRightPanelWidth, setToolPanelChatBaselineWidth, toolPanelCollapsed]);
 
   useEffect(() => {
-    const baselineWidth = toolPanelChatBaselineWidth ?? desktopRightPanelWidth;
+    if (typeof window === 'undefined' || !chatToolRegionRef.current) return;
+    const update = () => {
+      if (!chatToolRegionRef.current) return;
+      setChatToolRegionWidth(Math.round(chatToolRegionRef.current.getBoundingClientRect().width));
+    };
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => update());
+    observer.observe(chatToolRegionRef.current);
+    return () => observer.disconnect();
+  }, [toolPanelCollapsed]);
+
+  useEffect(() => {
+    const measuredBaselineWidth = toolPanelCollapsed
+      ? desktopRightPanelWidth
+      : chatToolRegionWidth;
+    const baselineWidth = measuredBaselineWidth ?? toolPanelChatBaselineWidth ?? desktopRightPanelWidth;
     if (!baselineWidth || baselineWidth <= 0) return;
 
-    const exactHalfWidth = Math.max(320, Math.round(baselineWidth / 2));
+    const gapPx = toolPanelCollapsed ? 0 : 12;
+    const exactHalfWidth = Math.max(320, Math.round((baselineWidth - gapPx) / 2));
 
     if (toolPanelWidth === null) {
       setToolPanelWidth(exactHalfWidth);
       return;
     }
 
-    // Keep the live width aligned to exactly half of the pre-tool chat width.
     if (Math.abs(toolPanelWidth - exactHalfWidth) > 2) {
       setToolPanelWidth(exactHalfWidth);
     }
-  }, [desktopRightPanelWidth, setToolPanelWidth, toolPanelChatBaselineWidth, toolPanelWidth]);
+  }, [chatToolRegionWidth, desktopRightPanelWidth, setToolPanelWidth, toolPanelChatBaselineWidth, toolPanelCollapsed, toolPanelWidth]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1353,8 +1371,9 @@ export default function App({ onLogout }: AppProps) {
               rightClassName="boot-panel flex flex-col"
               left={renderSidebarPanels(handleSessionChange)}
               right={(
-                <div className="flex h-full min-h-0 min-w-0 gap-3 overflow-hidden">
+                <div ref={chatToolRegionRef} className="flex h-full min-h-0 min-w-0 gap-3 overflow-hidden">
                   <div
+                    id="chat-pane-width-target"
                     ref={activeChatPaneRef}
                     className="shell-panel boot-panel min-h-0 overflow-hidden rounded-[28px]"
                     style={toolPanelCollapsed
@@ -1364,6 +1383,7 @@ export default function App({ onLogout }: AppProps) {
                     {chatContent}
                   </div>
                   <div
+                    id="tool-pane-width-target"
                     ref={activeToolPaneRef}
                     className="boot-panel min-h-0"
                     style={toolPanelCollapsed
