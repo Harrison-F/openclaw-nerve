@@ -17,6 +17,7 @@ import {
   Brain,
   MessageSquare,
   LayoutGrid,
+  Plus,
 } from "lucide-react";
 import type { ViewMode } from "@/features/command-palette/commands";
 import type { AgentLogEntry, EventEntry, TokenData } from "@/types";
@@ -107,6 +108,8 @@ interface TopBarProps {
   viewMode?: ViewMode;
   /** Callback to change the view mode. */
   onViewModeChange?: (mode: ViewMode) => void;
+  /** Create a new chat immediately. */
+  onNewChat?: () => void;
 }
 
 /**
@@ -129,6 +132,7 @@ export function TopBar({
   workspacePanel,
   viewMode = "chat",
   onViewModeChange,
+  onNewChat,
 }: TopBarProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -244,6 +248,16 @@ export function TopBar({
               <MessageSquare size={13} aria-hidden="true" />
               <span>Chat</span>
             </button>
+            {onNewChat && (
+              <button
+                onClick={onNewChat}
+                title="New Chat"
+                aria-label="New chat"
+                className="shell-chip min-h-11 justify-center px-3 text-[0.733rem] uppercase tracking-[0.14em] max-[371px]:min-h-[38px] max-[371px]:gap-1 max-[371px]:px-2 max-[371px]:text-[0.667rem] max-[371px]:tracking-[0.08em] max-[371px]:[&_svg]:size-3 sm:min-h-10 sm:flex-none"
+              >
+                <Plus size={13} aria-hidden="true" />
+              </button>
+            )}
             <button
               onClick={() => onViewModeChange("kanban")}
               title="Tasks View"

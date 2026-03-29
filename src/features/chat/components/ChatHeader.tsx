@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Cpu, Gauge, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { InlineSelect } from '@/components/ui/InlineSelect';
 import { TOOL_DEFINITIONS } from '@/features/tools/toolRegistry';
 import { useModelEffort } from './useModelEffort';
@@ -22,8 +22,6 @@ interface ChatHeaderProps {
   onToggleToolPanel?: () => void;
   /** Whether the tools panel is currently collapsed. */
   isToolPanelCollapsed?: boolean;
-  /** Create a new chat immediately. */
-  onNewChat?: () => void;
   /** Currently selected tool id. */
   selectedToolId?: string | null;
   /** Pick a tool from the header menu. */
@@ -46,7 +44,6 @@ export function ChatHeader({
   isFileBrowserCollapsed = true,
   onToggleMobileTopBar,
   isMobileTopBarHidden = false,
-  onNewChat,
   selectedToolId = null,
   onSelectTool,
 }: ChatHeaderProps) {
@@ -132,17 +129,6 @@ export function ChatHeader({
           aria-label="Chat title"
           className="min-w-0 flex-1 rounded-xl border border-border/70 bg-background/70 px-3 py-2 text-[0.86rem] font-medium text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 focus:ring-1 focus:ring-primary/35 sm:max-w-[340px]"
         />
-        {onNewChat && (
-          <button
-            type="button"
-            onClick={onNewChat}
-            className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-primary/45 bg-primary/12 px-3 text-foreground shadow-[0_0_0_1px_rgba(255,255,255,0.04)] transition-colors hover:bg-primary/18"
-            title="New chat"
-            aria-label="New chat"
-          >
-            <Plus size={16} />
-          </button>
-        )}
       </div>
 
       {/* Model + Effort selectors on the right */}

@@ -1074,7 +1074,6 @@ export default function App({ onLogout }: AppProps) {
             isMobileTopBarHidden={isMobileTopBarHidden}
             onToggleToolPanel={handleToggleToolPanel}
             isToolPanelCollapsed={toolPanelCollapsed}
-            onNewChat={() => { void handleCreateNewChat(); }}
             selectedToolId={selectedToolId}
             onSelectTool={setSelectedToolId}
             onOpenWorkspacePath={openWorkspacePath}
@@ -1338,6 +1337,7 @@ export default function App({ onLogout }: AppProps) {
           workspacePanel={compactWorkspacePanel}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          onNewChat={() => { void handleCreateNewChat(); }}
         />
       )}
       
