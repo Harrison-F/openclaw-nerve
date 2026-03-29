@@ -80,8 +80,8 @@ export function ChatHeader({
             onClick={onToggleFileBrowser}
             disabled={!onToggleFileBrowser}
             className="flex flex-1 items-center justify-center text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground disabled:pointer-events-none disabled:opacity-35"
-            title={`${isFileBrowserCollapsed ? 'Open' : 'Close'} file explorer (Ctrl+B)`}
-            aria-label={`${isFileBrowserCollapsed ? 'Open' : 'Close'} file explorer`}
+            title={`${isFileBrowserCollapsed ? 'Open' : 'Collapse'} file explorer (Ctrl+B)`}
+            aria-label={`${isFileBrowserCollapsed ? 'Open' : 'Collapse'} file explorer`}
           >
             {isFileBrowserCollapsed ? <PanelLeftOpen size={14} /> : <PanelLeftClose size={14} />}
           </button>

@@ -6,7 +6,7 @@
  */
 
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { PanelLeftClose, RefreshCw, Pencil, Trash2, RotateCcw, X } from 'lucide-react';
+import { PanelLeftClose, PanelLeftOpen, RefreshCw, Pencil, Trash2, RotateCcw, X } from 'lucide-react';
 import { FileTreeNode } from './FileTreeNode';
 import { useFileTree } from './hooks/useFileTree';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
@@ -658,9 +658,43 @@ export function FileTreePanel({
     void runMove(source.path, '');
   }, [canDropToTarget, runMove, visibleDragSource]);
 
-  // Collapsed state - hide the panel and let the chat header host the reopen control.
+  // Collapsed state - keep a slim rail visible so the reopen affordance is obvious.
   if (collapsed) {
-    return null;
+    return (
+      <div
+        className="relative flex h-full min-h-0 shrink-0"
+        style={isCompactLayout ? undefined : { width: 56 }}
+      >
+        <div className="shell-panel flex h-full w-full min-h-0 flex-col items-center justify-between overflow-hidden rounded-[28px] border border-border/70 bg-gradient-to-b from-secondary/88 to-card/82 px-2 py-3">
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="shell-icon-button size-10 shrink-0 px-0"
+            title="Open file explorer (Ctrl+B)"
+            aria-label="Open file explorer"
+          >
+            <PanelLeftOpen size={16} />
+          </button>
+
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            className="group flex flex-1 min-h-0 items-center justify-center text-[0.58rem] font-mono font-semibold uppercase tracking-[0.28em] text-muted-foreground transition-colors hover:text-foreground"
+            title="Open file explorer"
+            aria-label="Open file explorer"
+          >
+            <span
+              className="pointer-events-none whitespace-nowrap [writing-mode:vertical-rl] rotate-180"
+              aria-hidden="true"
+            >
+              Files
+            </span>
+          </button>
+
+          <div className="h-10 w-10 shrink-0" aria-hidden="true" />
+        </div>
+      </div>
+    );
   }
 
   const menuEntry = visibleContextMenu?.entry;
@@ -711,8 +745,8 @@ export function FileTreePanel({
             <button
               onClick={toggleCollapsed}
               className="shell-icon-button size-10 px-0"
-              title="Close file explorer (Ctrl+B)"
-              aria-label="Close file explorer"
+              title="Collapse file explorer (Ctrl+B)"
+              aria-label="Collapse file explorer"
             >
               <PanelLeftClose size={16} />
             </button>
