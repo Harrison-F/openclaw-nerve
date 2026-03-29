@@ -136,7 +136,7 @@ export function ChatHeader({
           <button
             type="button"
             onClick={onNewChat}
-            className="shell-icon-button size-10 shrink-0 px-0 ring-1 ring-border/70"
+            className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl border border-primary/45 bg-primary/12 px-3 text-foreground shadow-[0_0_0_1px_rgba(255,255,255,0.04)] transition-colors hover:bg-primary/18"
             title="New chat"
             aria-label="New chat"
           >
