@@ -45,7 +45,7 @@ describe('ConnectDialog', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Gateway token')).toBeTruthy();
+    expect(screen.getByLabelText('Gateway token (advanced)')).toBeTruthy();
   });
 
   it('hides token field when serverSideAuth is active and url is the default', () => {
@@ -61,7 +61,7 @@ describe('ConnectDialog', () => {
       />,
     );
 
-    expect(screen.queryByLabelText('Gateway token')).toBeFalsy();
+    expect(screen.queryByLabelText('Gateway token (advanced)')).toBeFalsy();
   });
 
   it('hides token field when url is a loopback alias of the official gateway', () => {
@@ -77,7 +77,7 @@ describe('ConnectDialog', () => {
       />,
     );
 
-    expect(screen.queryByLabelText('Gateway token')).toBeFalsy();
+    expect(screen.queryByLabelText('Gateway token (advanced)')).toBeFalsy();
   });
 
   it('shows token field when serverSideAuth is active but user changes url away from default', () => {
@@ -93,10 +93,10 @@ describe('ConnectDialog', () => {
       />,
     );
 
-    const urlInput = screen.getByLabelText('WebSocket endpoint');
+    const urlInput = screen.getByLabelText('WebSocket endpoint (advanced)');
     fireEvent.change(urlInput, { target: { value: 'ws://example.com:1234/ws' } });
 
-    expect(screen.getByLabelText('Gateway token')).toBeTruthy();
+    expect(screen.getByLabelText('Gateway token (advanced)')).toBeTruthy();
   });
 
   it('forces empty token when serverSideAuth is active for default host', async () => {
@@ -113,7 +113,7 @@ describe('ConnectDialog', () => {
       />,
     );
 
-    const connectButton = screen.getByText('Connect to Gateway');
+    const connectButton = screen.getByText('Manual connect');
     fireEvent.click(connectButton);
 
     expect(onConnect).toHaveBeenCalledWith('ws://localhost:1234/ws', '');
@@ -133,7 +133,7 @@ describe('ConnectDialog', () => {
       />,
     );
 
-    fireEvent.click(screen.getByText('Connect to Gateway'));
+    fireEvent.click(screen.getByText('Manual connect'));
 
     expect(onConnect).toHaveBeenCalledWith('ws://127.0.0.1:1234/ws', '');
   });
@@ -152,9 +152,9 @@ describe('ConnectDialog', () => {
       />,
     );
 
-    expect(screen.getByLabelText('Gateway token')).toBeTruthy();
+    expect(screen.getByLabelText('Gateway token (advanced)')).toBeTruthy();
 
-    fireEvent.click(screen.getByText('Connect to Gateway'));
+    fireEvent.click(screen.getByText('Manual connect'));
 
     expect(onConnect).toHaveBeenCalledWith('ws://custom.example/ws', 'custom-token');
   });
