@@ -50,6 +50,10 @@ interface ChatPanelProps {
   onToggleToolPanel?: () => void;
   /** Whether the tool panel is currently collapsed. */
   isToolPanelCollapsed?: boolean;
+  /** Toggle the chat history rail. */
+  onToggleChatHistory?: () => void;
+  /** Whether chat history is currently collapsed. */
+  isChatHistoryCollapsed?: boolean;
   /** Currently selected tool in the panel. */
   selectedToolId?: string | null;
   /** Select a tool for the panel. */
@@ -82,7 +86,9 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   sessionTitle = 'Chat', onRenameSession,
   loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
-  onToggleToolPanel, isToolPanelCollapsed = false, selectedToolId = null, onSelectTool,
+  onToggleToolPanel, isToolPanelCollapsed = false,
+  onToggleChatHistory, isChatHistoryCollapsed = false,
+  selectedToolId = null, onSelectTool,
   onOpenWorkspacePath,
   searchTarget = null,
   voiceState,
@@ -281,7 +287,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   const firstMessageTime = messages.length > 0 ? messages[0].timestamp : null;
 
   return (
-    <div id={id} className="h-full flex flex-col border-r border-border min-w-0 relative">
+    <div id={id} className="flex h-full min-h-0 flex-col border-r border-border min-w-0 relative">
       {/* COMMS Header */}
       <ChatHeader
         onReset={onReset}
@@ -295,6 +301,8 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         isMobileTopBarHidden={isMobileTopBarHidden}
         onToggleToolPanel={onToggleToolPanel}
         isToolPanelCollapsed={isToolPanelCollapsed}
+        onToggleChatHistory={onToggleChatHistory}
+        isChatHistoryCollapsed={isChatHistoryCollapsed}
         selectedToolId={selectedToolId}
         onSelectTool={onSelectTool}
       />

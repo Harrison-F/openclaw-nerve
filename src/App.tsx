@@ -15,7 +15,7 @@ import {
   lazy,
   Suspense,
 } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCw, PlugZap, Mic, Loader2, Square } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, RotateCw, PlugZap, Mic, Loader2, Square, SidebarOpen } from 'lucide-react';
 import type { SearchMatchTarget } from '@/features/chat/useMessageSearch';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
@@ -74,7 +74,10 @@ const TOOL_PANEL_WIDTH_STORAGE_KEY = 'nerve-tool-panel-width-v3';
 const TOOL_PANEL_CHAT_BASELINE_STORAGE_KEY = 'nerve-tool-panel-chat-baseline-v1';
 const TOOL_PANEL_COLLAPSED_STORAGE_KEY = 'nerve-tool-panel-collapsed';
 const TOOL_PANEL_SELECTED_STORAGE_KEY = 'nerve-tool-panel-selected-tool';
+const CHAT_HISTORY_COLLAPSED_STORAGE_KEY = 'nerve-chat-history-collapsed';
+const CHAT_HISTORY_WIDTH_STORAGE_KEY = 'nerve-chat-history-width';
 const TOOL_PANEL_RAIL_WIDTH_PX = 56;
+const CHAT_HISTORY_RAIL_WIDTH_PX = 56;
 const SHARED_WORKSPACE_AGENT_ID = 'main';
 
 function buildWorkspaceSwitchErrorMessage(result: {
@@ -341,6 +344,32 @@ export default function App({ onLogout }: AppProps) {
     setToolPanelCollapsed(prev => !prev);
   }, [setToolPanelCollapsed]);
 
+  const setChatHistoryCollapsed = useCallback((nextCollapsed: boolean | ((prev: boolean) => boolean)) => {
+    setChatHistoryCollapsedState(prevCollapsed => {
+      const resolved = typeof nextCollapsed === 'function' ? nextCollapsed(prevCollapsed) : nextCollapsed;
+      try {
+        localStorage.setItem(CHAT_HISTORY_COLLAPSED_STORAGE_KEY, String(resolved));
+      } catch {
+        // ignore storage errors
+      }
+      return resolved;
+    });
+  }, []);
+
+  const handleToggleChatHistory = useCallback(() => {
+    setChatHistoryCollapsed(prev => !prev);
+  }, [setChatHistoryCollapsed]);
+
+  const setChatHistoryWidth = useCallback((nextWidth: number) => {
+    const clamped = Math.max(240, Math.min(520, Math.round(nextWidth)));
+    setChatHistoryWidthState(clamped);
+    try {
+      localStorage.setItem(CHAT_HISTORY_WIDTH_STORAGE_KEY, String(clamped));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
   const sharedWorkspaceAgentId = SHARED_WORKSPACE_AGENT_ID;
   const [visibleChatKeys, setVisibleChatKeys] = useState<Set<string>>(() => new Set());
   const [chatVisibilityInitialized, setChatVisibilityInitialized] = useState(false);
@@ -446,6 +475,22 @@ export default function App({ onLogout }: AppProps) {
   const [logGlow, setLogGlow] = useState(false);
   const [isMobileTopBarHidden, setIsMobileTopBarHidden] = useState(false);
   const [desktopRightPanelWidth, setDesktopRightPanelWidth] = useState<number | null>(null);
+  const [chatHistoryCollapsed, setChatHistoryCollapsedState] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(CHAT_HISTORY_COLLAPSED_STORAGE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [chatHistoryWidth, setChatHistoryWidthState] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(CHAT_HISTORY_WIDTH_STORAGE_KEY);
+      const parsed = saved ? Number(saved) : NaN;
+      return Number.isFinite(parsed) ? Math.max(240, Math.min(520, parsed)) : 320;
+    } catch {
+      return 320;
+    }
+  });
   const [toolPanelCollapsed, setToolPanelCollapsedState] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem(TOOL_PANEL_COLLAPSED_STORAGE_KEY);
@@ -1018,6 +1063,8 @@ export default function App({ onLogout }: AppProps) {
             isMobileTopBarHidden={isMobileTopBarHidden}
             onToggleToolPanel={handleToggleToolPanel}
             isToolPanelCollapsed={toolPanelCollapsed}
+            onToggleChatHistory={handleToggleChatHistory}
+            isChatHistoryCollapsed={chatHistoryCollapsed}
             selectedToolId={selectedToolId}
             onSelectTool={setSelectedToolId}
             onOpenWorkspacePath={openWorkspacePath}
@@ -1062,6 +1109,30 @@ export default function App({ onLogout }: AppProps) {
     </Suspense>
   );
 
+  const chatHistoryRail = (
+    <div className="shell-panel flex h-full min-h-0 w-full flex-col items-center justify-between overflow-hidden rounded-[28px] border border-border/70 bg-gradient-to-b from-secondary/88 to-card/82 px-2 py-3">
+      <button
+        type="button"
+        onClick={handleToggleChatHistory}
+        className="shell-icon-button size-10 shrink-0 px-0"
+        title="Open chat history"
+        aria-label="Open chat history"
+      >
+        <SidebarOpen size={16} />
+      </button>
+      <button
+        type="button"
+        onClick={handleToggleChatHistory}
+        className="group flex flex-1 min-h-0 items-center justify-center text-[0.58rem] font-mono font-semibold uppercase tracking-[0.28em] text-muted-foreground transition-colors hover:text-foreground"
+        title="Open chat history"
+        aria-label="Open chat history"
+      >
+        <span className="pointer-events-none whitespace-nowrap [writing-mode:vertical-rl] rotate-180" aria-hidden="true">History</span>
+      </button>
+      <div className="h-10 w-10 shrink-0" aria-hidden="true" />
+    </div>
+  );
+
   const compactSessionsPanel = (
     <Suspense fallback={<div className="p-4 text-muted-foreground text-xs">Loading sessions…</div>}>
       <PanelErrorBoundary name="Sessions">
@@ -1085,6 +1156,8 @@ export default function App({ onLogout }: AppProps) {
       </PanelErrorBoundary>
     </Suspense>
   );
+
+  const chatHistoryPanel = renderSidebarPanels(handleSessionChange);
 
   const compactWorkspacePanel = undefined;
 
@@ -1359,48 +1432,98 @@ export default function App({ onLogout }: AppProps) {
           </div>
         ) : (
           <div style={{ display: viewMode === 'kanban' ? 'none' : 'contents' }}>
-            <ResizablePanels
-              leftPercent={panelRatio}
-              leftWidthPx={DEFAULT_CHAT_HISTORY_WIDTH_PX}
-              onResize={setPanelRatio}
-              minLeftPercent={30}
-              maxLeftPercent={85}
-              rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
-              onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
-              leftClassName="boot-panel flex flex-col"
-              rightClassName="boot-panel flex flex-col"
-              left={renderSidebarPanels(handleSessionChange)}
-              right={(
-                <div ref={chatToolRegionRef} className="flex h-full min-h-0 min-w-0 gap-3 overflow-hidden">
-                  <div
-                    id="chat-pane-width-target"
-                    ref={activeChatPaneRef}
-                    className="shell-panel boot-panel min-h-0 overflow-hidden rounded-[28px]"
-                    style={toolPanelCollapsed
-                      ? { flex: '1 1 auto', minWidth: 0 }
-                      : { flex: '0 0 auto', width: `${toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2))}px`, minWidth: 0 }}
-                  >
-                    {chatContent}
-                  </div>
-                  <div
-                    id="tool-pane-width-target"
-                    ref={activeToolPaneRef}
-                    className="boot-panel min-h-0"
-                    style={toolPanelCollapsed
-                      ? { flex: '0 0 auto', width: `${TOOL_PANEL_RAIL_WIDTH_PX}px`, minWidth: 0 }
-                      : { flex: '0 0 auto', width: `${toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2))}px`, minWidth: 0 }}
-                  >
-                    <ToolPanel
-                      collapsed={toolPanelCollapsed}
-                      onCollapseChange={setToolPanelCollapsed}
-                      selectedToolId={selectedToolId}
-                      onSelectTool={setSelectedToolId}
-                      debugMetrics={toolPanelDebugMetrics}
-                    />
-                  </div>
+            <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden gap-3">
+              {chatHistoryCollapsed ? (
+                <div style={{ width: `${CHAT_HISTORY_RAIL_WIDTH_PX}px` }} className="min-h-0 shrink-0">
+                  {chatHistoryRail}
+                </div>
+              ) : (
+                <div style={{ width: `${chatHistoryWidth}px` }} className="min-h-0 shrink-0">
+                  {chatHistoryPanel}
                 </div>
               )}
-            />
+
+              <div
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  const startX = event.clientX;
+                  const startWidth = chatHistoryWidth;
+                  const onMove = (moveEvent: MouseEvent) => {
+                    setChatHistoryWidth(startWidth + (moveEvent.clientX - startX));
+                  };
+                  const onUp = () => {
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                    document.body.style.cursor = '';
+                    document.body.style.userSelect = '';
+                  };
+                  document.body.style.cursor = 'col-resize';
+                  document.body.style.userSelect = 'none';
+                  window.addEventListener('mousemove', onMove);
+                  window.addEventListener('mouseup', onUp);
+                }}
+                className="group relative flex w-3 shrink-0 cursor-col-resize items-stretch justify-center"
+                title="Drag to resize chat history"
+              >
+                <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors group-hover:bg-primary/55 group-hover:shadow-[0_0_16px_rgba(0,0,0,0.22)]" />
+              </div>
+
+              <div ref={chatToolRegionRef} className="flex h-full min-h-0 min-w-0 flex-1 gap-3 overflow-hidden">
+                <div
+                  id="chat-pane-width-target"
+                  ref={activeChatPaneRef}
+                  className="shell-panel boot-panel min-h-0 overflow-hidden rounded-[28px]"
+                  style={toolPanelCollapsed
+                    ? { flex: '1 1 auto', minWidth: 0 }
+                    : { flex: '0 0 auto', width: `${toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2))}px`, minWidth: 0 }}
+                >
+                  {chatContent}
+                </div>
+
+                <div
+                  onMouseDown={(event) => {
+                    if (toolPanelCollapsed) return;
+                    event.preventDefault();
+                    const startX = event.clientX;
+                    const startWidth = toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2));
+                    const onMove = (moveEvent: MouseEvent) => {
+                      setToolPanelWidth(startWidth - (moveEvent.clientX - startX));
+                    };
+                    const onUp = () => {
+                      window.removeEventListener('mousemove', onMove);
+                      window.removeEventListener('mouseup', onUp);
+                      document.body.style.cursor = '';
+                      document.body.style.userSelect = '';
+                    };
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                  }}
+                  className="group relative flex w-3 shrink-0 cursor-col-resize items-stretch justify-center"
+                  title="Drag to resize chat and tool panel"
+                >
+                  <div className="pointer-events-none my-3 w-px rounded-full bg-border transition-colors group-hover:bg-primary/55 group-hover:shadow-[0_0_16px_rgba(0,0,0,0.22)]" />
+                </div>
+
+                <div
+                  id="tool-pane-width-target"
+                  ref={activeToolPaneRef}
+                  className="boot-panel min-h-0"
+                  style={toolPanelCollapsed
+                    ? { flex: '0 0 auto', width: `${TOOL_PANEL_RAIL_WIDTH_PX}px`, minWidth: 0 }
+                    : { flex: '0 0 auto', width: `${toolPanelWidth ?? Math.max(320, Math.round(((toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? 640)) / 2))}px`, minWidth: 0 }}
+                >
+                  <ToolPanel
+                    collapsed={toolPanelCollapsed}
+                    onCollapseChange={setToolPanelCollapsed}
+                    selectedToolId={selectedToolId}
+                    onSelectTool={setSelectedToolId}
+                    debugMetrics={toolPanelDebugMetrics}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>
