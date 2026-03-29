@@ -44,6 +44,7 @@ import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEven
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
 import { buildAgentRootSessionKey, getSessionDisplayLabel, getTopLevelAgentSessions } from '@/features/sessions/sessionKeys';
 import { getWorkspaceAgentId, getWorkspaceRootSessionKey } from '@/features/workspace/workspaceScope';
+import { ToolPanel } from '@/features/tools/ToolPanel';
 
 // Lazy-loaded features (not needed in initial bundle)
 const SettingsDrawer = lazy(() => import('@/features/settings/SettingsDrawer').then(m => ({ default: m.SettingsDrawer })));
@@ -69,6 +70,10 @@ const CHAT_VISIBILITY_STORAGE_KEY = 'nerve-visible-chat-session-keys-v1';
 const CHAT_HISTORY_WIDTH_MIGRATION_KEY = 'nerve-chat-history-width-migrated-v2';
 const DEFAULT_CHAT_HISTORY_PANEL_RATIO = 50;
 const DEFAULT_CHAT_HISTORY_WIDTH_PX = 220;
+const TOOL_PANEL_WIDTH_STORAGE_KEY = 'nerve-tool-panel-width';
+const TOOL_PANEL_COLLAPSED_STORAGE_KEY = 'nerve-tool-panel-collapsed';
+const TOOL_PANEL_SELECTED_STORAGE_KEY = 'nerve-tool-panel-selected-tool';
+const TOOL_PANEL_RAIL_WIDTH_PX = 56;
 const SHARED_WORKSPACE_AGENT_ID = 'main';
 
 function buildWorkspaceSwitchErrorMessage(result: {
@@ -284,6 +289,47 @@ export default function App({ onLogout }: AppProps) {
     setFileBrowserCollapsed(prev => !prev);
   }, [setFileBrowserCollapsed]);
 
+  const setToolPanelCollapsed = useCallback((nextCollapsed: boolean | ((prev: boolean) => boolean)) => {
+    setToolPanelCollapsedState(prevCollapsed => {
+      const resolvedCollapsed = typeof nextCollapsed === 'function'
+        ? nextCollapsed(prevCollapsed)
+        : nextCollapsed;
+
+      try {
+        localStorage.setItem(TOOL_PANEL_COLLAPSED_STORAGE_KEY, String(resolvedCollapsed));
+      } catch {
+        // ignore storage errors
+      }
+
+      return resolvedCollapsed;
+    });
+  }, []);
+
+  const setSelectedToolId = useCallback((nextToolId: string | null) => {
+    setSelectedToolIdState(nextToolId);
+    try {
+      if (nextToolId) localStorage.setItem(TOOL_PANEL_SELECTED_STORAGE_KEY, nextToolId);
+      else localStorage.removeItem(TOOL_PANEL_SELECTED_STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    setToolPanelCollapsed(false);
+  }, []);
+
+  const setToolPanelWidth = useCallback((nextWidth: number) => {
+    const clamped = Math.max(320, Math.min(1200, Math.round(nextWidth)));
+    setToolPanelWidthState(clamped);
+    try {
+      localStorage.setItem(TOOL_PANEL_WIDTH_STORAGE_KEY, String(clamped));
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  const handleToggleToolPanel = useCallback(() => {
+    setToolPanelCollapsed(prev => !prev);
+  }, [setToolPanelCollapsed]);
+
   const sharedWorkspaceAgentId = SHARED_WORKSPACE_AGENT_ID;
   const [visibleChatKeys, setVisibleChatKeys] = useState<Set<string>>(() => new Set());
   const [chatVisibilityInitialized, setChatVisibilityInitialized] = useState(false);
@@ -389,6 +435,31 @@ export default function App({ onLogout }: AppProps) {
   const [logGlow, setLogGlow] = useState(false);
   const [isMobileTopBarHidden, setIsMobileTopBarHidden] = useState(false);
   const [desktopRightPanelWidth, setDesktopRightPanelWidth] = useState<number | null>(null);
+  const [toolPanelCollapsed, setToolPanelCollapsedState] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(TOOL_PANEL_COLLAPSED_STORAGE_KEY);
+      return saved === null ? false : saved === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [selectedToolId, setSelectedToolIdState] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(TOOL_PANEL_SELECTED_STORAGE_KEY) || null;
+    } catch {
+      return null;
+    }
+  });
+  const [toolPanelWidth, setToolPanelWidthState] = useState<number | null>(() => {
+    try {
+      const saved = localStorage.getItem(TOOL_PANEL_WIDTH_STORAGE_KEY);
+      if (!saved) return null;
+      const parsed = Number(saved);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    } catch {
+      return null;
+    }
+  });
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
 
@@ -797,6 +868,11 @@ export default function App({ onLogout }: AppProps) {
     setSttModel(model);
   }, [setSttModel]);
 
+  useEffect(() => {
+    if (toolPanelWidth !== null || !desktopRightPanelWidth || desktopRightPanelWidth <= 0) return;
+    setToolPanelWidth(Math.max(320, Math.round(desktopRightPanelWidth * 0.5)));
+  }, [desktopRightPanelWidth, setToolPanelWidth, toolPanelWidth]);
+
   const visibleSaveToast = saveToast?.agentId === sharedWorkspaceAgentId
     && saveToast.workspaceVersion === workspaceVersion
     ? saveToast
@@ -846,6 +922,10 @@ export default function App({ onLogout }: AppProps) {
             isFileBrowserCollapsed={fileBrowserCollapsed}
             onToggleMobileTopBar={isCompactLayout ? toggleMobileTopBar : undefined}
             isMobileTopBarHidden={isMobileTopBarHidden}
+            onToggleToolPanel={handleToggleToolPanel}
+            isToolPanelCollapsed={toolPanelCollapsed}
+            selectedToolId={selectedToolId}
+            onSelectTool={setSelectedToolId}
             onOpenWorkspacePath={openWorkspacePath}
             searchTarget={activeChatSearchTarget}
             voiceState={voiceState}
@@ -1186,17 +1266,36 @@ export default function App({ onLogout }: AppProps) {
         ) : (
           <div style={{ display: viewMode === 'kanban' ? 'none' : 'contents' }}>
             <ResizablePanels
-              leftPercent={panelRatio}
-              leftWidthPx={DEFAULT_CHAT_HISTORY_WIDTH_PX}
-              onResize={setPanelRatio}
-              minLeftPercent={30}
+              leftPercent={76}
+              onResize={() => {}}
+              minLeftPercent={45}
               maxLeftPercent={85}
-              rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
-              onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
-              leftClassName="boot-panel flex flex-col"
-              rightClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
-              left={renderSidebarPanels(handleSessionChange)}
-              right={chatContent}
+              rightWidthPx={toolPanelCollapsed ? TOOL_PANEL_RAIL_WIDTH_PX : (toolPanelWidth ?? Math.max(320, Math.round((desktopRightPanelWidth ?? 640) * 0.5)))}
+              onRightWidthChange={toolPanelCollapsed ? undefined : setToolPanelWidth}
+              left={(
+                <ResizablePanels
+                  leftPercent={panelRatio}
+                  leftWidthPx={DEFAULT_CHAT_HISTORY_WIDTH_PX}
+                  onResize={setPanelRatio}
+                  minLeftPercent={30}
+                  maxLeftPercent={85}
+                  rightWidthPx={fileBrowserCollapsed ? desktopRightPanelWidth : null}
+                  onRightWidthChange={fileBrowserCollapsed ? undefined : setDesktopRightPanelWidth}
+                  leftClassName="boot-panel flex flex-col"
+                  rightClassName="shell-panel boot-panel rounded-[28px] overflow-hidden"
+                  left={renderSidebarPanels(handleSessionChange)}
+                  right={chatContent}
+                />
+              )}
+              rightClassName="boot-panel flex flex-col"
+              right={(
+                <ToolPanel
+                  collapsed={toolPanelCollapsed}
+                  onCollapseChange={setToolPanelCollapsed}
+                  selectedToolId={selectedToolId}
+                  onSelectTool={setSelectedToolId}
+                />
+              )}
             />
           </div>
         )}

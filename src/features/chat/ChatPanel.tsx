@@ -46,6 +46,14 @@ interface ChatPanelProps {
   onToggleMobileTopBar?: () => void;
   /** Whether the mobile top bar is currently hidden. */
   isMobileTopBarHidden?: boolean;
+  /** Toggle the right-side tool panel. */
+  onToggleToolPanel?: () => void;
+  /** Whether the tool panel is currently collapsed. */
+  isToolPanelCollapsed?: boolean;
+  /** Currently selected tool in the panel. */
+  selectedToolId?: string | null;
+  /** Select a tool for the panel. */
+  onSelectTool?: (toolId: string | null) => void;
   /** Open or reveal a safe workspace path in the file explorer/editor. */
   onOpenWorkspacePath?: (path: string) => void | Promise<void>;
   searchTarget?: { requestId: number; target: SearchMatchTarget } | null;
@@ -74,6 +82,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
   sessionTitle = 'Chat', onRenameSession,
   loadMore, hasMore = false, onToggleFileBrowser, isFileBrowserCollapsed = true,
   onToggleMobileTopBar, isMobileTopBarHidden = false,
+  onToggleToolPanel, isToolPanelCollapsed = false, selectedToolId = null, onSelectTool,
   onOpenWorkspacePath,
   searchTarget = null,
   voiceState,
@@ -284,6 +293,10 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(function Ch
         isFileBrowserCollapsed={isFileBrowserCollapsed}
         onToggleMobileTopBar={onToggleMobileTopBar}
         isMobileTopBarHidden={isMobileTopBarHidden}
+        onToggleToolPanel={onToggleToolPanel}
+        isToolPanelCollapsed={isToolPanelCollapsed}
+        selectedToolId={selectedToolId}
+        onSelectTool={onSelectTool}
       />
 
       {/* Search Bar */}
