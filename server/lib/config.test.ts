@@ -7,6 +7,7 @@ describe('config module', () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    vi.resetModules();
     vi.restoreAllMocks();
   });
 
@@ -38,11 +39,12 @@ describe('config module', () => {
       expect(['127.0.0.1', 'localhost', '::1', '0.0.0.0']).toContain(config.host);
     });
 
-    it('defaults auth to false', async () => {
+    it('defaults auth to false when NERVE_AUTH is unset', async () => {
+      delete process.env.NERVE_AUTH;
+      vi.resetModules();
+
       const { config } = await import('./config.js');
-      if (!process.env.NERVE_AUTH || process.env.NERVE_AUTH !== 'true') {
-        expect(config.auth).toBe(false);
-      }
+      expect(config.auth).toBe(false);
     });
 
     it('defaults language to en', async () => {
