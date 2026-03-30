@@ -96,6 +96,11 @@ export async function resolveWorkspacePathForRoot(
   const root = getWorkspaceRoot(workspaceRoot);
   const rootPrefix = root.endsWith(path.sep) ? root : root + path.sep;
 
+  const isWithinRoot = (candidate: string, base: string): boolean => {
+    const basePrefix = base.endsWith(path.sep) ? base : `${base}${path.sep}`;
+    return candidate === base || candidate.startsWith(basePrefix);
+  };
+
   // Block obvious traversal attempts
   const normalized = path.normalize(relativePath);
   if (normalized.startsWith('..') || path.isAbsolute(normalized)) {
@@ -115,10 +120,15 @@ export async function resolveWorkspacePathForRoot(
     return null;
   }
 
+  const realRoot = await fs.realpath(root).catch(() => null);
+
   // Resolve symlinks and re-check
   try {
     const real = await fs.realpath(resolved);
-    if (!real.startsWith(rootPrefix) && real !== root) {
+    if (realRoot) {
+      return isWithinRoot(real, realRoot) ? real : null;
+    }
+    if (!isWithinRoot(real, root)) {
       return null;
     }
     return real;
@@ -126,17 +136,19 @@ export async function resolveWorkspacePathForRoot(
     // File doesn't exist
     if (!options?.allowNonExistent) return null;
 
-    // Walk up until we find an existing ancestor. This allows creating the
-    // first file in a fresh workspace, or nested paths whose parents will be
-    // created later via mkdir({ recursive: true }).
+    // If the workspace root itself does not exist yet, allow bootstrapping the
+    // first write into that future root after the lexical traversal checks above.
+    if (!realRoot) {
+      return resolved;
+    }
+
+    // Walk up until we find an existing ancestor below the workspace root. This
+    // allows creating nested paths while still rejecting symlink escapes.
     let current = path.dirname(resolved);
-    while (current !== root) {
+    while (isWithinRoot(current, root) && current !== root) {
       try {
         const realCurrent = await fs.realpath(current);
-        if (!realCurrent.startsWith(rootPrefix) && realCurrent !== root) {
-          return null;
-        }
-        return resolved;
+        return isWithinRoot(realCurrent, realRoot) ? resolved : null;
       } catch {
         const next = path.dirname(current);
         if (next === current) {
@@ -144,15 +156,6 @@ export async function resolveWorkspacePathForRoot(
         }
         current = next;
       }
-    }
-
-    try {
-      const realRoot = await fs.realpath(root);
-      if (!realRoot.startsWith(rootPrefix) && realRoot !== root) {
-        return null;
-      }
-    } catch {
-      // Fresh workspace root does not exist yet. That's fine.
     }
 
     return resolved;

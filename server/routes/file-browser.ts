@@ -304,7 +304,8 @@ app.get('/api/files/resolve', async (c) => {
     return c.json({ ok: false, error: 'Path not found' }, 404);
   }
 
-  const relative = path.relative(workspace.workspaceRoot, resolved).split(path.sep).join('/');
+  const canonicalRoot = await fs.realpath(workspace.workspaceRoot).catch(() => workspace.workspaceRoot);
+  const relative = path.relative(canonicalRoot, resolved).split(path.sep).join('/');
   if (!relative || relative === '.') {
     return c.json({ ok: false, error: 'Path not found' }, 404);
   }

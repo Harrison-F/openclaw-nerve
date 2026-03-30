@@ -6,7 +6,7 @@
  */
 
 import fs from 'node:fs/promises';
-import type { Stats } from 'node:fs';
+import fsSync, { type Stats } from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {
@@ -67,9 +67,27 @@ function normalizeWorkspaceRoot(workspaceRoot: string): string {
   return getWorkspaceRoot(workspaceRoot);
 }
 
+function canonicalizeExistingPath(candidate: string): string {
+  try {
+    return fsSync.realpathSync.native(candidate);
+  } catch {
+    return candidate;
+  }
+}
+
 function toWorkspaceRelative(absPath: string, workspaceRoot: string): string {
   const root = normalizeWorkspaceRoot(workspaceRoot);
-  const rel = path.relative(root, absPath);
+  const canonicalRoot = canonicalizeExistingPath(root);
+
+  let candidate = absPath;
+  if (candidate === root || candidate.startsWith(`${root}${path.sep}`)) {
+    const suffix = path.relative(root, candidate);
+    candidate = suffix ? path.join(canonicalRoot, suffix) : canonicalRoot;
+  } else {
+    candidate = canonicalizeExistingPath(candidate);
+  }
+
+  const rel = path.relative(canonicalRoot, candidate);
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw new FileOpError(403, 'invalid_path', 'Invalid or excluded path');
   }
