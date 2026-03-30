@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowLeft, Plus } from 'lucide-react';
 import { ChatPanel } from '@/features/chat/ChatPanel';
 import type { ImageAttachment } from '@/features/chat/types';
@@ -97,17 +97,16 @@ export default function MobileShell({
 }: MobileShellProps) {
   const [activeView, setActiveView] = useState<'history' | 'chat'>('history');
 
-  useEffect(() => {
-    if (currentSession) setActiveView('chat');
-  }, [currentSession]);
+  const hasChats = sessions.length > 0;
+  const activeTitle = useMemo(() => sessionTitle || agentDisplayName || 'Chat', [agentDisplayName, sessionTitle]);
 
   const handleSelect = (key: string) => {
     onSelectSession(key);
     setActiveView('chat');
   };
 
-  const handleCreateNewChat = () => {
-    void onSpawnSession?.({
+  const handleCreateNewChat = async () => {
+    await onSpawnSession?.({
       kind: 'root',
       agentName: `chat-${Date.now().toString(36)}`,
       task: '',
@@ -117,7 +116,7 @@ export default function MobileShell({
 
   return (
     <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
-      {activeView === 'history' ? (
+      {activeView === 'history' || !currentSession ? (
         <div className="flex min-h-0 flex-1 flex-col">
           <div className="flex items-center justify-between border-b border-border/70 px-4 py-3">
             <div>
@@ -137,22 +136,28 @@ export default function MobileShell({
           <div className="min-h-0 flex-1 overflow-hidden p-2">
             <div className="shell-panel flex h-full min-h-0 flex-col overflow-hidden rounded-[24px]">
               <PanelErrorBoundary name="Mobile Chat History">
-                <SessionList
-                  displayMode="chat"
-                  sessions={sessions}
-                  currentSession={currentSession}
-                  busyState={busyState}
-                  agentStatus={agentStatus}
-                  unreadSessions={unreadSessions}
-                  onSelect={handleSelect}
-                  onSelectSearchResult={onSelectSearchResult}
-                  onDelete={onDeleteSession}
-                  onSpawn={onSpawnSession}
-                  onRename={onRenameSessionList}
-                  onAbort={onAbortSession}
-                  isLoading={sessionsLoading}
-                  agentName={agentName}
-                />
+                {hasChats ? (
+                  <SessionList
+                    displayMode="chat"
+                    sessions={sessions}
+                    currentSession={currentSession}
+                    busyState={busyState}
+                    agentStatus={agentStatus}
+                    unreadSessions={unreadSessions}
+                    onSelect={handleSelect}
+                    onSelectSearchResult={onSelectSearchResult}
+                    onDelete={onDeleteSession}
+                    onSpawn={onSpawnSession}
+                    onRename={onRenameSessionList}
+                    onAbort={onAbortSession}
+                    isLoading={sessionsLoading}
+                    agentName={agentName}
+                  />
+                ) : (
+                  <div className="flex min-h-0 flex-1 items-center justify-center px-6 text-center text-sm text-muted-foreground">
+                    No chats yet. Tap the plus button to start one.
+                  </div>
+                )}
               </PanelErrorBoundary>
             </div>
           </div>
@@ -171,7 +176,7 @@ export default function MobileShell({
                 <ArrowLeft size={18} />
               </button>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold tracking-[-0.02em]">{sessionTitle}</p>
+                <p className="truncate text-sm font-semibold tracking-[-0.02em]">{activeTitle}</p>
               </div>
             </div>
             <PanelErrorBoundary name="Mobile Chat">
