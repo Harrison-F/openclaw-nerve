@@ -1557,8 +1557,10 @@ describe('useOpenFiles', () => {
       });
     });
 
-    writeRequest.resolve(createJsonResponse({ ok: true, mtime: 99 }));
-    await expect(savePromise).resolves.toEqual({ ok: true });
+    await act(async () => {
+      writeRequest.resolve(createJsonResponse({ ok: true, mtime: 99 }));
+      await expect(savePromise).resolves.toEqual({ ok: true });
+    });
 
     rerender({ agentId: 'main' });
 
