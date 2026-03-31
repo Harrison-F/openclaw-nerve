@@ -29,7 +29,6 @@ import type {
   TaskPriority,
   TaskActor,
   ProposalStatus,
-  KanbanBoard,
 } from '../lib/kanban-store.js';
 
 const app = new Hono();
