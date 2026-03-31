@@ -97,8 +97,8 @@ describe('SpawnAgentDialog', () => {
     renderDialog(onSpawn, onOpenChange);
 
     fireEvent.click(screen.getByText('New agent'));
-    fireEvent.change(screen.getByPlaceholderText('e.g. reviewer'), { target: { value: 'research' } });
-    fireEvent.change(screen.getByPlaceholderText('What should this new agent start working on?'), { target: { value: 'test task' } });
+    fireEvent.change(screen.getByPlaceholderText('e.g. Nerve redesign'), { target: { value: 'research' } });
+    fireEvent.change(screen.getByPlaceholderText('What should this new chat start with?'), { target: { value: 'test task' } });
     fireEvent.click(screen.getByText('Create agent'));
 
     await waitFor(() => {
