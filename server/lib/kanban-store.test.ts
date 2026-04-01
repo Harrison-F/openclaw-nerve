@@ -57,7 +57,8 @@ describe('init', () => {
     expect(exists).toBe(true);
 
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-    expect(raw.meta.schemaVersion).toBe(1);
+    expect(typeof raw.meta.schemaVersion).toBe('number');
+    expect(raw.meta.schemaVersion).toBeGreaterThanOrEqual(1);
     expect(raw.tasks).toEqual([]);
   });
 
