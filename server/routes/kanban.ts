@@ -274,6 +274,7 @@ const updateTaskSchema = z.object({
   version: z.number().int().min(1),
   title: z.string().min(1).max(500).optional(),
   description: z.string().max(10_000).optional().nullable(),
+  boardId: z.string().min(1).max(100).optional(),
   status: taskStatusSchema.optional(),
   priority: taskPrioritySchema.optional(),
   assignee: taskActorSchema.optional().nullable(),

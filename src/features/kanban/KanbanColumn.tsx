@@ -11,10 +11,11 @@ interface KanbanColumnProps {
   status: TaskStatus;
   tasks: KanbanTask[];
   onCardClick: (task: KanbanTask) => void;
+  onCardContextMenu?: (event: React.MouseEvent, task: KanbanTask) => void;
   onCreateTask?: (status: TaskStatus) => void;
 }
 
-export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick, onCreateTask }: KanbanColumnProps) {
+export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick, onCardContextMenu, onCreateTask }: KanbanColumnProps) {
   const accent = TASK_STATUS_TONE[status];
 
   // Make the column itself a drop target (for dropping into empty columns)
@@ -46,11 +47,11 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
             <button
               type="button"
               onClick={() => onCreateTask(status)}
-              className="shell-icon-button size-8 px-0"
+              className="shell-icon-button size-10 px-0"
               title={`Create task in ${COLUMN_LABELS[status]}`}
               aria-label={`Create task in ${COLUMN_LABELS[status]}`}
             >
-              <Plus size={14} />
+              <Plus size={18} />
             </button>
           )}
           <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full border px-2 py-0.5 text-[0.667rem] font-semibold tabular-nums ${accent.badgeClass}`}>
@@ -72,7 +73,7 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
             </div>
           ) : (
             tasks.map(task => (
-              <KanbanCard key={task.id} task={task} onClick={onCardClick} />
+              <KanbanCard key={task.id} task={task} onClick={onCardClick} onContextMenu={onCardContextMenu} />
             ))
           )}
         </div>

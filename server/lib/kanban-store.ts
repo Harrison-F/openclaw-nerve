@@ -732,6 +732,7 @@ export class KanbanStore {
         KanbanTask,
         | 'title'
         | 'description'
+        | 'boardId'
         | 'status'
         | 'priority'
         | 'assignee'
@@ -763,10 +764,13 @@ export class KanbanStore {
       const now = Date.now();
       const updated: KanbanTask = { ...task, ...patch, updatedAt: now, version: task.version + 1 };
 
-      // If status changed, re-compute columnOrder (append to end of new column)
-      if (patch.status && patch.status !== task.status) {
+      const targetBoardId = patch.boardId && patch.boardId !== task.boardId ? patch.boardId : task.boardId;
+
+      // If board or status changed, re-compute columnOrder (append to end of new column)
+      if ((patch.status && patch.status !== task.status) || (patch.boardId && patch.boardId !== task.boardId)) {
+        const targetStatus = patch.status ?? task.status;
         const maxOrder = data.tasks
-          .filter((t) => t.boardId === task.boardId && t.status === patch.status && t.id !== id)
+          .filter((t) => t.boardId === targetBoardId && t.status === targetStatus && t.id !== id)
           .reduce((max, t) => Math.max(max, t.columnOrder), -1);
         updated.columnOrder = maxOrder + 1;
       }

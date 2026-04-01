@@ -44,6 +44,7 @@ export interface CreateTaskPayload {
 export interface UpdateTaskPayload {
   title?: string;
   description?: string | null;
+  boardId?: string;
   status?: TaskStatus;
   priority?: TaskPriority;
   labels?: string[];

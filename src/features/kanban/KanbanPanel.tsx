@@ -57,6 +57,9 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
   const [createOpen, setCreateOpen] = useState(false);
   const [createStatus, setCreateStatus] = useState<TaskStatus | null>(null);
   const [selectedTask, setSelectedTask] = useState<KanbanTask | null>(null);
+  const [taskContextMenu, setTaskContextMenu] = useState<{ x: number; y: number; task: KanbanTask } | null>(null);
+  const [moveTargetBoardId, setMoveTargetBoardId] = useState<string>('');
+  const [moveTargetStatus, setMoveTargetStatus] = useState<TaskStatus>('todo');
   const [pendingBoardDelete, setPendingBoardDelete] = useState<KanbanBoardType | null>(null);
   const consumedRef = useRef<string | null>(null);
 
@@ -98,6 +101,23 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
   const handleDelete = useCallback(async (id: string) => {
     await deleteTask(id);
   }, [deleteTask]);
+
+  const handleTaskContextMenu = useCallback((event: React.MouseEvent, task: KanbanTask) => {
+    event.preventDefault();
+    setTaskContextMenu({ x: event.clientX, y: event.clientY, task });
+    setMoveTargetBoardId(task.boardId);
+    setMoveTargetStatus(task.status);
+  }, []);
+
+  const handleMoveTask = useCallback(async () => {
+    if (!taskContextMenu) return;
+    await updateTask(taskContextMenu.task.id, {
+      version: taskContextMenu.task.version,
+      boardId: moveTargetBoardId,
+      status: moveTargetStatus,
+    });
+    setTaskContextMenu(null);
+  }, [moveTargetBoardId, moveTargetStatus, taskContextMenu, updateTask]);
 
   /* ── Open create dialog ── */
   const openCreateDialog = useCallback((status?: TaskStatus) => {
@@ -145,6 +165,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
         <KanbanBoard
           tasksByStatus={tasksByStatus}
           onCardClick={handleCardClick}
+          onCardContextMenu={handleTaskContextMenu}
           loading={loading}
           error={error}
           onRetry={() => fetchTasks()}
@@ -178,6 +199,58 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
         onReject={rejectTask}
         onAbort={abortTask}
       />
+
+      {taskContextMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onMouseDown={() => setTaskContextMenu(null)}
+        >
+          <div
+            className="shell-panel absolute w-72 rounded-2xl p-3 shadow-[0_20px_50px_rgba(0,0,0,0.28)]"
+            style={{ left: taskContextMenu.x, top: taskContextMenu.y }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Move task</div>
+            <div className="mb-2 text-sm font-medium text-foreground line-clamp-2">{taskContextMenu.task.title}</div>
+            <div className="space-y-3">
+              <label className="block text-xs text-muted-foreground">
+                Board
+                <select
+                  value={moveTargetBoardId}
+                  onChange={(e) => setMoveTargetBoardId(e.target.value)}
+                  className="mt-1 h-10 w-full rounded-xl border border-border/70 bg-background/70 px-3 text-sm text-foreground outline-none"
+                >
+                  {boards.map((board) => (
+                    <option key={board.id} value={board.id}>{board.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs text-muted-foreground">
+                Category
+                <select
+                  value={moveTargetStatus}
+                  onChange={(e) => setMoveTargetStatus(e.target.value as TaskStatus)}
+                  className="mt-1 h-10 w-full rounded-xl border border-border/70 bg-background/70 px-3 text-sm text-foreground outline-none"
+                >
+                  <option value="backlog">Backlog</option>
+                  <option value="todo">To Do</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="review">Review</option>
+                  <option value="done">Done</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                onClick={() => { void handleMoveTask(); }}
+                className="w-full rounded-xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                Move task
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={Boolean(pendingBoardDelete)}

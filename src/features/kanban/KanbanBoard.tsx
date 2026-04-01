@@ -11,6 +11,7 @@ import { useKanbanDragDrop } from './hooks/useKanbanDragDrop';
 interface KanbanBoardProps {
   tasksByStatus: (status: TaskStatus) => KanbanTask[];
   onCardClick: (task: KanbanTask) => void;
+  onCardContextMenu?: (event: React.MouseEvent, task: KanbanTask) => void;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -42,6 +43,7 @@ function SkeletonColumn() {
 export const KanbanBoard = memo(function KanbanBoard({
   tasksByStatus,
   onCardClick,
+  onCardContextMenu,
   loading,
   error,
   onRetry,
@@ -182,6 +184,7 @@ export const KanbanBoard = memo(function KanbanBoard({
               status={status}
               tasks={localTasksByStatus(status)}
               onCardClick={onCardClick}
+              onCardContextMenu={onCardContextMenu}
               onCreateTask={onCreateTask}
             />
           ))}

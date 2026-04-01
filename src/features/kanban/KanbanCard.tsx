@@ -44,23 +44,24 @@ function RunBadge({ status }: { status: string }) {
 interface KanbanCardProps {
   task: KanbanTask;
   onClick: (task: KanbanTask) => void;
+  onContextMenu?: (event: React.MouseEvent, task: KanbanTask) => void;
   /** True when rendered inside DragOverlay — skips sortable hook */
   isOverlay?: boolean;
   /** Alias for isOverlay (compat with KanbanBoard) */
   isDragOverlay?: boolean;
 }
 
-export const KanbanCard = memo(function KanbanCard({ task, onClick, isOverlay, isDragOverlay }: KanbanCardProps) {
+export const KanbanCard = memo(function KanbanCard({ task, onClick, onContextMenu, isOverlay, isDragOverlay }: KanbanCardProps) {
   const overlay = isOverlay || isDragOverlay;
   return overlay ? (
-    <CardContent task={task} onClick={onClick} isDragging isOverlay />
+    <CardContent task={task} onClick={onClick} onContextMenu={onContextMenu} isDragging isOverlay />
   ) : (
-    <SortableCard task={task} onClick={onClick} />
+    <SortableCard task={task} onClick={onClick} onContextMenu={onContextMenu} />
   );
 });
 
 /* ── Sortable wrapper (only used for in-place cards, not overlay) ── */
-function SortableCard({ task, onClick }: { task: KanbanTask; onClick: (task: KanbanTask) => void }) {
+function SortableCard({ task, onClick, onContextMenu }: { task: KanbanTask; onClick: (task: KanbanTask) => void; onContextMenu?: (event: React.MouseEvent, task: KanbanTask) => void }) {
   const {
     attributes,
     listeners,
@@ -77,7 +78,7 @@ function SortableCard({ task, onClick }: { task: KanbanTask; onClick: (task: Kan
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <CardContent task={task} onClick={onClick} isDragging={isDragging} />
+      <CardContent task={task} onClick={onClick} onContextMenu={onContextMenu} isDragging={isDragging} />
     </div>
   );
 }
@@ -86,11 +87,13 @@ function SortableCard({ task, onClick }: { task: KanbanTask; onClick: (task: Kan
 function CardContent({
   task,
   onClick,
+  onContextMenu,
   isDragging,
   isOverlay,
 }: {
   task: KanbanTask;
   onClick: (task: KanbanTask) => void;
+  onContextMenu?: (event: React.MouseEvent, task: KanbanTask) => void;
   isDragging?: boolean;
   isOverlay?: boolean;
 }) {
@@ -101,6 +104,9 @@ function CardContent({
     <button
       type="button"
       onClick={() => { if (!isDragging) onClick(task); }}
+      onContextMenu={(event) => {
+        if (!isDragging && onContextMenu) onContextMenu(event, task);
+      }}
       className={`group w-full cursor-pointer rounded-[18px] border border-border/70 bg-background/58 px-3 py-3 text-left shadow-[0_10px_26px_rgba(0,0,0,0.14)] transition-[transform,box-shadow,border-color,background-color,opacity] duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
         isOverlay
           ? 'scale-[1.02] rotate-[1deg] border-primary/40 bg-card/92 shadow-[0_18px_40px_rgba(0,0,0,0.28)]'
