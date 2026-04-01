@@ -15,7 +15,7 @@ interface KanbanBoardProps {
   error: string | null;
   onRetry: () => void;
   hasAnyTasks: boolean;
-  onCreateTask: () => void;
+  onCreateTask: (status?: TaskStatus) => void;
   reorderTask: (id: string, version: number, targetStatus: TaskStatus, targetIndex: number) => Promise<KanbanTask>;
 }
 
@@ -182,6 +182,7 @@ export const KanbanBoard = memo(function KanbanBoard({
               status={status}
               tasks={localTasksByStatus(status)}
               onCardClick={onCardClick}
+              onCreateTask={onCreateTask}
             />
           ))}
         </div>

@@ -26,12 +26,13 @@ interface CreateTaskDialogProps {
   onCreate: (payload: CreateTaskPayload) => Promise<void>;
   boardName?: string;
   boardConfig?: KanbanBoardConfig | null;
+  initialStatus?: TaskStatus | null;
 }
 
-export function CreateTaskDialog({ open, onOpenChange, onCreate, boardName = 'General', boardConfig = null }: CreateTaskDialogProps) {
+export function CreateTaskDialog({ open, onOpenChange, onCreate, boardName = 'General', boardConfig = null, initialStatus = null }: CreateTaskDialogProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [status, setStatus] = useState<TaskStatus>(boardConfig?.defaults.status ?? 'todo');
+  const [status, setStatus] = useState<TaskStatus>(initialStatus ?? boardConfig?.defaults.status ?? 'todo');
   const [priority, setPriority] = useState<TaskPriority>(boardConfig?.defaults.priority ?? 'normal');
   const [labelsRaw, setLabelsRaw] = useState('');
   const [assignee, setAssignee] = useState('');
@@ -53,13 +54,13 @@ export function CreateTaskDialog({ open, onOpenChange, onCreate, boardName = 'Ge
     if (!open) {
       setTitle('');
       setDescription('');
-      setStatus(boardConfig?.defaults.status ?? 'todo');
+      setStatus(initialStatus ?? boardConfig?.defaults.status ?? 'todo');
       setPriority(boardConfig?.defaults.priority ?? 'normal');
       setLabelsRaw('');
       setAssignee('');
       setError(null);
     }
-  }, [open]);
+  }, [open, boardConfig, initialStatus]);
 
   const trimmedTitle = title.trim();
   const isValid = trimmedTitle.length > 0 && trimmedTitle.length <= 500;

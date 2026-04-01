@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { Inbox } from 'lucide-react';
+import { Inbox, Plus } from 'lucide-react';
 import { useDroppable, useDndContext } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import type { KanbanTask, TaskStatus } from './types';
@@ -11,9 +11,10 @@ interface KanbanColumnProps {
   status: TaskStatus;
   tasks: KanbanTask[];
   onCardClick: (task: KanbanTask) => void;
+  onCreateTask?: (status: TaskStatus) => void;
 }
 
-export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick }: KanbanColumnProps) {
+export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardClick, onCreateTask }: KanbanColumnProps) {
   const accent = TASK_STATUS_TONE[status];
 
   // Make the column itself a drop target (for dropping into empty columns)
@@ -40,9 +41,22 @@ export const KanbanColumn = memo(function KanbanColumn({ status, tasks, onCardCl
             {COLUMN_LABELS[status]}
           </span>
         </div>
-        <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full border px-2 py-0.5 text-[0.667rem] font-semibold tabular-nums ${accent.badgeClass}`}>
-          {tasks.length}
-        </span>
+        <div className="flex items-center gap-1.5">
+          {onCreateTask && (
+            <button
+              type="button"
+              onClick={() => onCreateTask(status)}
+              className="shell-icon-button size-8 px-0"
+              title={`Create task in ${COLUMN_LABELS[status]}`}
+              aria-label={`Create task in ${COLUMN_LABELS[status]}`}
+            >
+              <Plus size={14} />
+            </button>
+          )}
+          <span className={`inline-flex min-w-[28px] items-center justify-center rounded-full border px-2 py-0.5 text-[0.667rem] font-semibold tabular-nums ${accent.badgeClass}`}>
+            {tasks.length}
+          </span>
+        </div>
       </div>
 
       {/* Scrollable card list — droppable + sortable context */}

@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import type { KanbanBoard as KanbanBoardType, KanbanTask } from './types';
+import type { KanbanBoard as KanbanBoardType, KanbanTask, TaskStatus } from './types';
 import { useKanban } from './hooks/useKanban';
 import { useProposals } from './hooks/useProposals';
 import { KanbanHeader } from './KanbanHeader';
@@ -55,6 +55,7 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
   } = useProposals();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [createStatus, setCreateStatus] = useState<TaskStatus | null>(null);
   const [selectedTask, setSelectedTask] = useState<KanbanTask | null>(null);
   const [pendingBoardDelete, setPendingBoardDelete] = useState<KanbanBoardType | null>(null);
   const consumedRef = useRef<string | null>(null);
@@ -99,7 +100,8 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
   }, [deleteTask]);
 
   /* ── Open create dialog ── */
-  const openCreateDialog = useCallback(() => {
+  const openCreateDialog = useCallback((status?: TaskStatus) => {
+    setCreateStatus(status ?? null);
     setCreateOpen(true);
   }, []);
 
@@ -155,10 +157,14 @@ export function KanbanPanel({ initialTaskId, onInitialTaskConsumed }: KanbanPane
       {/* Create Task Modal */}
       <CreateTaskDialog
         open={createOpen}
-        onOpenChange={setCreateOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) setCreateStatus(null);
+        }}
         onCreate={handleCreate}
         boardName={activeBoard?.name ?? 'General'}
         boardConfig={activeBoard?.config ?? null}
+        initialStatus={createStatus}
       />
 
       {/* Task Detail Drawer */}
