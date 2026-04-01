@@ -156,7 +156,7 @@ export const KanbanBoard = memo(function KanbanBoard({
           <p className="text-[0.867rem] text-muted-foreground mb-5">
             Create your first task or ask an agent to propose one.
           </p>
-          <Button size="sm" onClick={onCreateTask} className="min-w-[132px] text-[0.733rem] uppercase tracking-[0.16em]">
+          <Button size="sm" onClick={() => onCreateTask()} className="min-w-[132px] text-[0.733rem] uppercase tracking-[0.16em]">
             Create Task
           </Button>
         </div>
