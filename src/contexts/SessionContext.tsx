@@ -27,6 +27,7 @@ const SESSIONS_LIMIT = 200;
 const FULL_SESSIONS_LIMIT = 1000;
 const SUBAGENT_DISCOVERY_TIMEOUT_MS = 60_000;
 const SUBAGENT_DISCOVERY_POLL_MS = 1_000;
+const CURRENT_SESSION_STORAGE_KEY = 'nerve-current-session';
 
 export interface SpawnSessionOpts {
   kind: 'root' | 'subagent';
@@ -65,7 +66,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const { connectionState, rpc, subscribe } = useGateway();
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sessionsLoading, setSessionsLoading] = useState(true);
-  const [currentSession, setCurrentSessionRaw] = useState('');
+  const [currentSession, setCurrentSessionRaw] = useState(() => {
+    try { return localStorage.getItem(CURRENT_SESSION_STORAGE_KEY) || ''; } catch { return ''; }
+  });
   const [agentLogEntries, setAgentLogEntries] = useState<AgentLogEntry[]>([]);
   const [eventEntries, setEventEntries] = useState<EventEntry[]>([]);
   const [agentStatus, setAgentStatus] = useState<Record<string, GranularAgentState>>({});
@@ -105,6 +108,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const setCurrentSession = useCallback((key: string) => {
     setCurrentSessionRaw(key);
+    try {
+      if (key) localStorage.setItem(CURRENT_SESSION_STORAGE_KEY, key);
+      else localStorage.removeItem(CURRENT_SESSION_STORAGE_KEY);
+    } catch {
+      // ignore storage errors
+    }
     markSessionRead(key);
   }, [markSessionRead]);
 
@@ -466,6 +475,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // If nothing changed, return the same array reference
         return hasChanges ? merged : prev;
       });
+      try {
+        if (nextCurrentSession) localStorage.setItem(CURRENT_SESSION_STORAGE_KEY, nextCurrentSession);
+        else localStorage.removeItem(CURRENT_SESSION_STORAGE_KEY);
+      } catch {
+        // ignore storage errors
+      }
       setCurrentSessionRaw(nextCurrentSession);
     } catch (err) {
       console.debug('[SessionContext] Failed to refresh sessions:', err);
@@ -685,6 +700,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (nextCurrentSession) {
         setCurrentSession(nextCurrentSession);
       } else {
+        try { localStorage.removeItem(CURRENT_SESSION_STORAGE_KEY); } catch { /* ignore */ }
         setCurrentSessionRaw('');
       }
     }

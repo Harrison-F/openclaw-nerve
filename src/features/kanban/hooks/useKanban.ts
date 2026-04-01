@@ -23,6 +23,7 @@ export interface KanbanFilters {
 }
 
 const EMPTY_FILTERS: KanbanFilters = { q: '', priority: [], assignee: '', labels: [] };
+const ACTIVE_BOARD_STORAGE_KEY = 'nerve-kanban-active-board';
 
 /** Error with attached latest task from a 409 response */
 export interface VersionConflictError extends Error {
@@ -70,8 +71,15 @@ export function useKanban() {
   const [error, setError] = useState<string | null>(null);
   const [filters, setFilters] = useState<KanbanFilters>(EMPTY_FILTERS);
   const [boards, setBoards] = useState<KanbanBoard[]>([]);
-  const [activeBoardId, setActiveBoardId] = useState<string>('general');
+  const [activeBoardId, setActiveBoardIdState] = useState<string>(() => {
+    try { return localStorage.getItem(ACTIVE_BOARD_STORAGE_KEY) || 'general'; } catch { return 'general'; }
+  });
   const abortRef = useRef<AbortController | null>(null);
+
+  const setActiveBoardId = useCallback((nextBoardId: string) => {
+    setActiveBoardIdState(nextBoardId);
+    try { localStorage.setItem(ACTIVE_BOARD_STORAGE_KEY, nextBoardId); } catch { /* ignore */ }
+  }, []);
 
   /* ── Fetch ── */
 
@@ -80,7 +88,11 @@ export function useKanban() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data: BoardsResponse = await res.json();
     setBoards(data.boards);
-    setActiveBoardId((prev) => (data.boards.some((board) => board.id === prev) ? prev : (data.boards[0]?.id ?? 'general')));
+    setActiveBoardIdState((prev) => {
+      const next = data.boards.some((board) => board.id === prev) ? prev : (data.boards[0]?.id ?? 'general');
+      try { localStorage.setItem(ACTIVE_BOARD_STORAGE_KEY, next); } catch { /* ignore */ }
+      return next;
+    });
     return data.boards;
   }, []);
 
