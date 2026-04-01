@@ -101,7 +101,7 @@ describe('useFileTree', () => {
   });
 
   describe('workspace info handling', () => {
-    it('initializes with null workspaceInfo', () => {
+    it('initializes with null workspaceInfo', async () => {
       const mockFetch = vi.mocked(fetch);
       mockFetch.mockResolvedValue({
         ok: true,
@@ -111,6 +111,10 @@ describe('useFileTree', () => {
       const { result } = renderHook(() => useFileTree());
 
       expect(result.current.workspaceInfo).toBeNull();
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
     });
 
     it('sets workspaceInfo when API response includes it', async () => {
@@ -219,7 +223,9 @@ describe('useFileTree', () => {
       } as Response);
 
       // Trigger a refresh
-      result.current.refresh();
+      act(() => {
+        result.current.refresh();
+      });
 
       await waitFor(() => {
         expect(result.current.workspaceInfo?.isCustomWorkspace).toBe(false);
@@ -315,7 +321,9 @@ describe('useFileTree', () => {
         }),
       } as Response);
 
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(true);
@@ -347,7 +355,9 @@ describe('useFileTree', () => {
         expect(result.current.entries).toHaveLength(1);
       });
 
-      result.current.selectFile('test.txt');
+      act(() => {
+        result.current.selectFile('test.txt');
+      });
       // Test that the function can be called without throwing
       expect(typeof result.current.selectFile).toBe('function');
     });
@@ -415,9 +425,13 @@ describe('useFileTree', () => {
         }),
       } as Response);
 
-      renderHook(() => useFileTree('main'));
+      const { result } = renderHook(() => useFileTree('main'));
 
       expect(mockLocalStorage.getItem).toHaveBeenCalledWith(getWorkspaceStorageKey('file-tree-expanded', 'main'));
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
     });
   });
 
@@ -460,7 +474,6 @@ describe('useFileTree', () => {
 
       const { result } = renderHook(() => useFileTree());
 
-      const returnKeys = Object.keys(result.current);
       const expectedKeys = [
         'entries',
         'loading',
@@ -476,8 +489,12 @@ describe('useFileTree', () => {
         'revealPath',
       ];
 
-      expect(returnKeys).toEqual(expect.arrayContaining(expectedKeys));
-      expect(returnKeys).toHaveLength(expectedKeys.length);
+      expect(Object.keys(result.current)).toEqual(expect.arrayContaining(expectedKeys));
+      expect(Object.keys(result.current)).toHaveLength(expectedKeys.length);
+
+      await waitFor(() => {
+        expect(result.current.loading).toBe(false);
+      });
     });
   });
 
@@ -559,7 +576,9 @@ describe('useFileTree', () => {
         json: async () => ({ ok: false, error: 'Invalid path' }),
       } as Response);
 
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(false);
@@ -594,7 +613,9 @@ describe('useFileTree', () => {
         json: async () => ({ ok: false, error: 'Not a directory' }),
       } as Response);
 
-      result.current.toggleDirectory('file.txt');
+      act(() => {
+        result.current.toggleDirectory('file.txt');
+      });
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('file.txt')).toBe(false);
@@ -629,7 +650,9 @@ describe('useFileTree', () => {
         json: async () => ({ ok: false, error: 'Server error' }),
       } as Response);
 
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         // Path should still be in expandedPaths (transient error, might work later)
@@ -670,7 +693,9 @@ describe('useFileTree', () => {
         json: async () => ({ ok: false, error: 'Directory not found' }),
       } as Response);
 
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(false);
@@ -772,7 +797,9 @@ describe('useFileTree', () => {
         }),
       } as Response);
 
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(true);
@@ -803,7 +830,9 @@ describe('useFileTree', () => {
         }),
       } as Response);
 
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(true);
@@ -928,7 +957,9 @@ describe('useFileTree', () => {
         expect(result.current.selectedPath).toBe('src/index.ts');
       });
 
-      rerender({ agentId: 'research' });
+      act(() => {
+        rerender({ agentId: 'research' });
+      });
 
       await waitFor(() => {
         expect(result.current.loading).toBe(false);
@@ -1242,7 +1273,9 @@ describe('useFileTree', () => {
         expect(result.current.selectedPath).toBe('src/index.ts');
       });
 
-      rerender({ agentId: 'research' });
+      act(() => {
+        rerender({ agentId: 'research' });
+      });
 
       await waitFor(() => {
         expect(result.current.loading).toBe(false);
@@ -1339,7 +1372,9 @@ describe('useFileTree', () => {
 
       const staleRefresh = result.current.refresh;
 
-      rerender({ agentId: 'research' });
+      act(() => {
+        rerender({ agentId: 'research' });
+      });
 
       await waitFor(() => {
         expect(result.current.loading).toBe(false);
@@ -1443,7 +1478,9 @@ describe('useFileTree', () => {
 
       const staleSelectFile = result.current.selectFile;
 
-      rerender({ agentId: 'research' });
+      act(() => {
+        rerender({ agentId: 'research' });
+      });
 
       await waitFor(() => {
         expect(result.current.loading).toBe(false);
@@ -1493,7 +1530,9 @@ describe('useFileTree', () => {
         }),
       } as Response);
 
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(true);
@@ -1525,7 +1564,9 @@ describe('useFileTree', () => {
       // Toggle directory - network error
       mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         // Path should still be in expandedPaths (might work on retry)
@@ -1565,14 +1606,18 @@ describe('useFileTree', () => {
         }),
       } as Response);
 
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(true);
       });
 
       // Collapse directory
-      result.current.toggleDirectory('src');
+      act(() => {
+        result.current.toggleDirectory('src');
+      });
 
       await waitFor(() => {
         expect(result.current.expandedPaths.has('src')).toBe(false);
