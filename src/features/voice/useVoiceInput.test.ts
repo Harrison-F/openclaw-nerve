@@ -125,13 +125,11 @@ describe('useVoiceInput', () => {
       const url = String(input);
 
       if (url.startsWith('/api/voice-phrases')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({
-            stopPhrases: ['boom', 'done'],
-            cancelPhrases: ['cancel'],
-          }),
-        });
+        // Keep the config fetch pending unless a test explicitly cares about it.
+        // That avoids post-render state updates from this background effect,
+        // which otherwise spam act(...) warnings without changing the behavior
+        // these tests are trying to exercise.
+        return new Promise(() => {});
       }
 
       if (url === '/api/transcribe') {
