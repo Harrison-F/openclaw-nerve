@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { visualizer } from 'rollup-plugin-visualizer'
 import path from 'path'
 import { readFileSync, existsSync } from 'fs'
 
@@ -20,7 +21,11 @@ const port = parseInt(process.env.VITE_PORT || '3080', 10)
 const apiTarget = `http://localhost:${process.env.PORT || '3081'}`
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    ...(process.env.ANALYZE ? [visualizer({ open: false, filename: 'stats.html', gzipSize: true })] : []),
+  ],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
   },
@@ -57,9 +62,13 @@ export default defineConfig({
           
           // Utility libraries
           'utils': ['clsx', 'tailwind-merge', 'class-variance-authority', 'dompurify'],
+          
+          // Chart libraries
+          'recharts-vendor': ['recharts'],
+          'trading-charts': ['lightweight-charts'],
         },
       },
     },
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 300,
   },
 })
