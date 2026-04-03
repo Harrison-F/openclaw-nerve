@@ -159,8 +159,10 @@ app.get('/api/sessions/hidden', rateLimitGeneral, async (c) => {
 app.get('/api/sessions/:id/model', rateLimitGeneral, async (c) => {
   const sessionId = c.req.param('id');
 
-  // Basic validation — session IDs are UUIDs
-  if (!/^[0-9a-f-]{36}$/.test(sessionId)) {
+  // Basic validation — session IDs are UUIDs or Hermes timestamp format
+  // UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  // Hermes: 20260328_204226_dc4be88a or session_20260402_224358_d0e23d
+  if (!/^[0-9a-f-]{36}$/.test(sessionId) && !/^(?:session_)?\d{8}_\d{6}_[0-9a-f]+$/.test(sessionId)) {
     return c.json({ ok: false, error: 'Invalid session ID' }, 400);
   }
 
