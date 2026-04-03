@@ -14,6 +14,7 @@ import {
   lazy,
   Suspense,
 } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 import { SidebarOpen } from 'lucide-react';
 import type { SearchMatchTarget } from '@/features/chat/useMessageSearch';
 import { useGateway } from '@/contexts/GatewayContext';
@@ -69,7 +70,9 @@ const SHARED_WORKSPACE_AGENT_ID = 'main';
 const MOBILE_ROUTE_PATH = '/m';
 
 export default function App({ onLogout }: AppProps) {
-  const isMobileRoute = typeof window !== 'undefined' && window.location.pathname === MOBILE_ROUTE_PATH;
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isMobileRoute = location.pathname === MOBILE_ROUTE_PATH;
   // Gateway state
   const {
     connectionState, connectError, reconnectAttempt, model, sparkline,
@@ -209,24 +212,36 @@ export default function App({ onLogout }: AppProps) {
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false);
   const [chatSearchTarget, setChatSearchTarget] = useState<{ sessionKey: string; requestId: number; target: SearchMatchTarget } | null>(null);
 
-  // View mode state (chat | kanban), persisted to localStorage
-  const [viewMode, setViewModeRaw] = useState<ViewMode>(() => {
-    try {
-      const saved = localStorage.getItem('nerve:viewMode');
-      if (saved === 'kanban') return 'kanban';
-    } catch { /* ignore */ }
-    return 'chat';
-  });
+  // View mode derived from URL path, persisted to localStorage
+  const viewMode: ViewMode = location.pathname === '/kanban' ? 'kanban' : 'chat';
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const setViewMode = useCallback((mode: ViewMode) => {
-    setViewModeRaw(mode);
+    const targetPath = mode === 'kanban' ? '/kanban' : '/';
+    navigate(targetPath, { replace: true });
 
     if (mode === 'kanban' && isCompactLayout) {
       setFileBrowserCollapsed(true);
     }
 
     try { localStorage.setItem('nerve:viewMode', mode); } catch { /* ignore */ }
-  }, [isCompactLayout, setFileBrowserCollapsed]);
+  }, [isCompactLayout, setFileBrowserCollapsed, navigate]);
+
+  // Sync localStorage when route changes
+  useEffect(() => {
+    if (location.pathname === '/kanban' || location.pathname === '/') {
+      try { localStorage.setItem('nerve:viewMode', location.pathname === '/kanban' ? 'kanban' : 'chat'); } catch { /* ignore */ }
+    }
+  }, [location.pathname]);
+
+  // On initial mount, if on root and saved mode is kanban, redirect
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('nerve:viewMode');
+      if (saved === 'kanban' && location.pathname === '/') {
+        navigate('/kanban', { replace: true });
+      }
+    } catch { /* ignore */ }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const openWorkspacePath = useCallback(async (targetPath: string) => {
     const params = new URLSearchParams({ path: targetPath, agentId: sharedWorkspaceAgentId });
     const res = await fetch(`/api/files/resolve?${params.toString()}`);

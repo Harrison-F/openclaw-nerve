@@ -1,28 +1,25 @@
 /* eslint-disable react-refresh/only-export-components -- hook intentionally co-located with provider */
 import { createContext, useContext, useCallback, useRef, useEffect, useState, useMemo, type ReactNode } from 'react';
 import { useGateway } from './GatewayContext';
-import { getSessionKey, type Session, type AgentLogEntry, type EventEntry, type GatewayEvent, type EventPayload, type AgentEventPayload, type ChatEventPayload, type ContentBlock, type SessionsListResponse, type ChatHistoryResponse, type ChatMessage, type GranularAgentState } from '@/types';
+import { getSessionKey, type Session, type AgentEventPayload, type ChatEventPayload, type EventPayload, type SessionsListResponse, type GatewayEvent, type GranularAgentState } from '@/types';
 import { describeToolUse } from '@/utils/helpers';
 import { buildSessionTree } from '@/features/sessions/sessionTree';
 import {
   buildAgentRootSessionKey,
   getRootAgentSessionKey,
-  getSessionDisplayLabel,
   getTopLevelAgentSessions,
   isSubagentSessionKey,
-  isTopLevelAgentSessionKey,
-  pickDefaultSessionKey,
   isRootChildSession,
+  pickDefaultSessionKey,
 } from '@/features/sessions/sessionKeys';
 import { buildSpawnSubagentMessage, type SubagentCleanupMode } from '@/features/sessions/buildSpawnSubagentMessage';
+import { useAgentLog } from '@/hooks/useAgentLog';
+import { useEventLog } from '@/hooks/useEventLog';
 
 const BUSY_STATES = new Set(['running', 'thinking', 'tool_use', 'delta', 'started']);
 const IDLE_STATES = new Set(['idle', 'done', 'error', 'final', 'aborted', 'completed']);
 
-// sessions.list query defaults.
-// Keep spawn/discovery polling on a recent active-window query, but use the
-// full session list for the sidebar so older root chats stay visible.
-const SESSIONS_ACTIVE_MINUTES = 24 * 60; // 24h
+const SESSIONS_ACTIVE_MINUTES = 24 * 60;
 const SESSIONS_LIMIT = 200;
 const FULL_SESSIONS_LIMIT = 1000;
 const SUBAGENT_DISCOVERY_TIMEOUT_MS = 60_000;
@@ -55,8 +52,8 @@ interface SessionContextValue {
   spawnSession: (opts: SpawnSessionOpts) => Promise<void>;
   renameSession: (sessionKey: string, label: string) => Promise<void>;
   updateSession: (sessionKey: string, updates: Partial<Session>) => void;
-  agentLogEntries: AgentLogEntry[];
-  eventEntries: EventEntry[];
+  agentLogEntries: import('@/types').AgentLogEntry[];
+  eventEntries: import('@/types').EventEntry[];
   agentName: string;
 }
 
@@ -69,17 +66,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [currentSession, setCurrentSessionRaw] = useState(() => {
     try { return localStorage.getItem(CURRENT_SESSION_STORAGE_KEY) || ''; } catch { return ''; }
   });
-  const [agentLogEntries, setAgentLogEntries] = useState<AgentLogEntry[]>([]);
-  const [eventEntries, setEventEntries] = useState<EventEntry[]>([]);
   const [agentStatus, setAgentStatus] = useState<Record<string, GranularAgentState>>({});
   const [agentName, setAgentName] = useState('Agent');
   const [unreadSessionKeys, setUnreadSessionKeys] = useState<Set<string>>(new Set());
-  const logStateRef = useRef<Record<string, boolean>>({});
-  const toolSeenRef = useRef<Map<string, number>>(new Map());
   const doneTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const delayedRefreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Derive busyState from agentStatus for backward compatibility
   const busyState = useMemo(() => {
     const result: Record<string, boolean> = {};
     for (const [key, state] of Object.entries(agentStatus)) {
@@ -88,7 +80,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return result;
   }, [agentStatus]);
   
-  // Derive unreadSessions as a stable Record<string, boolean> for consumers
   const unreadSessions = useMemo(() => {
     const result: Record<string, boolean> = {};
     for (const key of unreadSessionKeys) {
@@ -164,17 +155,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })();
     return () => controller.abort();
   }, []);
+
   const sessionsRef = useRef(sessions);
-  
-  // Update refs in effect to avoid render-time mutations
-  useEffect(() => {
-    sessionsRef.current = sessions;
-  }, [sessions]);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
   
   const currentSessionRef = useRef(currentSession);
-  useEffect(() => {
-    currentSessionRef.current = currentSession;
-  }, [currentSession]);
+  useEffect(() => { currentSessionRef.current = currentSession; }, [currentSession]);
+
+  const rpcRef = useRef(rpc);
+  useEffect(() => { rpcRef.current = rpc; }, [rpc]);
+
+  // Use extracted hooks
+  const { agentLogEntries, feedAgentLog } = useAgentLog(sessionsRef, agentName, rpcRef);
+  const { eventEntries, addEvent } = useEventLog();
 
   const findDescendantSessionKeys = useCallback((sessionKey: string, sourceSessions: Session[] = sessionsRef.current) => {
     const roots = buildSessionTree(sourceSessions);
@@ -218,14 +211,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const setGranularStatus = useCallback((sessionKey: string, state: GranularAgentState) => {
     if (!sessionKey) return;
-    // Cancel any pending DONE→IDLE timeout for this session
     if (doneTimeoutsRef.current[sessionKey]) {
       clearTimeout(doneTimeoutsRef.current[sessionKey]);
       delete doneTimeoutsRef.current[sessionKey];
     }
-    // If transitioning to DONE, schedule auto-transition to IDLE after 3s
     if (state.status === 'DONE') {
-      // Mark subagent sessions as unread when they complete (unless currently viewing)
       if (isSubagentSessionKey(sessionKey) && currentSessionRef.current !== sessionKey) {
         setUnreadSessionKeys(prev => {
           if (prev.has(sessionKey)) return prev;
@@ -237,7 +227,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       doneTimeoutsRef.current[sessionKey] = setTimeout(() => {
         setAgentStatus(prev => {
           const current = prev[sessionKey];
-          // Only transition if still in DONE state
           if (!current || current.status !== 'DONE') return prev;
           return { ...prev, [sessionKey]: { status: 'IDLE', since: Date.now() } };
         });
@@ -246,183 +235,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     setAgentStatus(prev => {
       const existing = prev[sessionKey];
-      // Optimization: skip update if status/tool haven't changed
       if (existing && existing.status === state.status && existing.toolName === state.toolName) return prev;
       return { ...prev, [sessionKey]: state };
     });
   }, []);
-
-  const shouldLogTool = useCallback((toolId: string) => {
-    if (!toolId) return false;
-    const now = Date.now();
-    const map = toolSeenRef.current;
-    const DEDUP_MS = 5 * 60 * 1000;
-    const last = map.get(toolId);
-    if (last && now - last < DEDUP_MS) return false;
-    map.set(toolId, now);
-    // Prune expired entries when map grows too large
-    if (map.size > 500) {
-      for (const [key, ts] of map) {
-        if (now - ts > DEDUP_MS) map.delete(key);
-      }
-    }
-    return true;
-  }, []);
-
-  const addAgentLogEntry = useCallback((icon: string, text: string) => {
-    const entry: AgentLogEntry = { icon, text, ts: Date.now() };
-    setAgentLogEntries(prev => [entry, ...prev].slice(0, 100));
-    fetch('/api/agentlog', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(entry)
-    }).catch(() => {});
-  }, []);
-
-  const friendlyName = useCallback((sk: string) => {
-    if (!sk) return 'unknown';
-    const sess = sessionsRef.current.find(s => getSessionKey(s) === sk);
-    if (sess) return getSessionDisplayLabel(sess, agentName);
-    if (isSubagentSessionKey(sk)) return 'sub-agent ' + sk.split(':').pop()?.slice(0, 8);
-    return sk.split(':').pop() || sk;
-  }, [agentName]);
-
-  const rpcRef = useRef(rpc);
-  
-  useEffect(() => {
-    rpcRef.current = rpc;
-  }, [rpc]);
-
-  const addEvent = useCallback((msg: GatewayEvent) => {
-    const evt = msg.event || 'response';
-    const p = (msg.payload || {}) as EventPayload;
-
-    const chatStateDescs: Record<string, string> = {
-      delta: 'Response streaming', final: 'Response complete',
-      error: 'Chat error', aborted: 'Response aborted',
-    };
-
-    let badge = 'SYSTEM', badgeCls = 'badge-system', desc = evt;
-
-    if (evt.startsWith('chat')) {
-      badge = 'CHAT'; badgeCls = 'badge-chat';
-      desc = chatStateDescs[p.state || ''] || (p.sessionKey ? 'Message from ' + p.sessionKey : 'Chat event');
-    } else if (evt.startsWith('agent')) {
-      badge = 'AGENT'; badgeCls = 'badge-agent';
-      const ap = p as AgentEventPayload;
-      if (ap.stream === 'lifecycle') {
-        const phase = String((ap.data as Record<string, unknown> | undefined)?.phase || '');
-        desc = 'Agent lifecycle: ' + (phase || 'unknown');
-      } else if (ap.stream === 'assistant') {
-        desc = 'Agent assistant output';
-      } else {
-        const state = p.state || p.agentState || '';
-        desc = state ? 'Agent state: ' + state : 'Agent event';
-      }
-    } else if (evt.startsWith('cron')) {
-      badge = 'CRON'; badgeCls = 'badge-cron';
-      desc = p.name ? 'Cron job: ' + p.name : 'Cron job triggered';
-    } else if (evt === 'connect.challenge') {
-      desc = 'Connection challenge received';
-    } else if (evt.startsWith('presence')) {
-      desc = 'Presence update';
-    } else if (evt.startsWith('exec.approval')) {
-      desc = 'Exec approval ' + (evt.includes('request') ? 'requested' : 'resolved');
-    } else if (evt.includes('error')) {
-      badge = 'ERROR'; badgeCls = 'badge-error';
-      desc = (typeof p.message === 'string' ? p.message : p.error) || 'Error occurred';
-    }
-
-    setEventEntries(prev => [{ badge, badgeCls, desc, ts: new Date() }, ...prev].slice(0, 50));
-  }, []);
-
-  const feedAgentLog = useCallback((evt: string, p: EventPayload) => {
-    const sk = p.sessionKey || '';
-    const name = friendlyName(sk);
-    const isSubagent = isSubagentSessionKey(sk);
-    const isMain = isTopLevelAgentSessionKey(sk);
-
-    const processToolBlocks = (blocks: ContentBlock[]) => {
-      for (const block of blocks) {
-        if (block.type !== 'tool_use' && block.type !== 'toolCall') continue;
-        if (!block.name) continue;
-        let toolInput: Record<string, unknown> = typeof block.input === 'object' && block.input ? block.input : {};
-        if (!toolInput || Object.keys(toolInput).length === 0) {
-          const args = block.arguments;
-          if (typeof args === 'string') {
-            try { toolInput = JSON.parse(args); } catch { toolInput = {}; }
-          } else if (typeof args === 'object' && args) {
-            toolInput = args;
-          }
-        }
-        const toolId = String(block.id || block.toolCallId || block.name);
-        if (shouldLogTool(toolId)) {
-          const desc = describeToolUse(block.name, toolInput);
-          if (desc) addAgentLogEntry('🔧', desc);
-        }
-      }
-    };
-
-    const processMessages = (msgs: ChatMessage[]) => {
-      for (const m of msgs) {
-        if (m.role === 'assistant' && Array.isArray(m.content)) {
-          processToolBlocks(m.content as ContentBlock[]);
-        }
-      }
-    };
-
-    // Handle lifecycle events from CLI agents (Codex, Claude Code CLI)
-    if (evt === 'agent') {
-      const ap = p as AgentEventPayload;
-      if (ap.stream === 'lifecycle') {
-        const phase = (ap.data as Record<string, unknown> | undefined)?.phase;
-        if (phase === 'start') {
-          logStateRef.current['_conv_' + sk] = true;
-          addAgentLogEntry(isMain ? '🧠' : '⚡', isMain ? 'thinking…' : isSubagent ? 'spawned ' + name : name + ' started');
-        } else if (phase === 'end') {
-          addAgentLogEntry(isMain ? '✦' : '✅', isMain ? 'finished response' : name + ' completed');
-          delete logStateRef.current['_conv_' + sk];
-        } else if (phase === 'error') {
-          addAgentLogEntry('❌', isMain ? 'generation failed' : name + ' failed');
-          delete logStateRef.current['_conv_' + sk];
-        }
-        return;
-      }
-    }
-
-    if (evt === 'chat') {
-      if ((p.state === 'delta' || p.state === 'started') && !logStateRef.current['_conv_' + sk]) {
-        logStateRef.current['_conv_' + sk] = true;
-        addAgentLogEntry(isMain ? '🧠' : '⚡', isMain ? 'thinking…' : isSubagent ? 'spawned ' + name : name + ' started');
-      }
-      if (Array.isArray(p.content)) processToolBlocks(p.content as ContentBlock[]);
-      if (Array.isArray(p.messages)) processMessages(p.messages as ChatMessage[]);
-      if (p.state === 'final') {
-        if (sk && rpcRef.current) {
-          rpcRef.current('chat.history', { sessionKey: sk, limit: 10 })
-            .then((res: unknown) => processMessages((res as ChatHistoryResponse)?.messages || []))
-            .catch(() => {});
-        }
-        addAgentLogEntry(isMain ? '✦' : '✅', isMain ? 'finished response' : name + ' completed');
-        delete logStateRef.current['_conv_' + sk];
-      } else if (p.state === 'error' || p.state === 'aborted') {
-        const icon = p.state === 'error' ? '❌' : '⛔';
-        const verb = p.state === 'error' ? 'failed' : 'aborted';
-        addAgentLogEntry(icon, isMain ? (p.state === 'error' ? 'generation failed' : 'response aborted') : name + ' ' + verb);
-        delete logStateRef.current['_conv_' + sk];
-      }
-    } else if (evt === 'cron') {
-      addAgentLogEntry('⏰', 'cron: ' + (p.name || 'scheduled task fired'));
-    } else if (evt === 'connect.challenge') {
-      addAgentLogEntry('🔗', 'connected to gateway');
-    } else if (evt.includes('error')) {
-      addAgentLogEntry('❌', (typeof p.message === 'string' ? p.message : p.error) || 'something went wrong');
-    } else if (evt === 'exec.approval.request') {
-      addAgentLogEntry('🔐', 'requesting exec approval');
-    } else if (evt === 'exec.approval.resolved') {
-      addAgentLogEntry('🔓', 'exec approved');
-    }
-  }, [addAgentLogEntry, friendlyName, shouldLogTool]);
 
   const refreshSessions = useCallback(async () => {
     if (connectionState !== 'connected') return;
@@ -430,13 +246,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const newSessions = await listAuthoritativeSessions();
       const nextCurrentSession = pickDefaultSessionKey(newSessions, currentSessionRef.current);
       
-      // Smart diffing: preserve object references for unchanged sessions.
-      // This prevents unnecessary re-renders in child components.
       setSessions(prev => {
-        // Fast path: if lengths differ, structure changed
         if (prev.length !== newSessions.length) return newSessions;
         
-        // Create lookup for efficient comparison
         const prevMap = new Map(prev.map(s => [getSessionKey(s), s]));
         
         let hasChanges = false;
@@ -444,13 +256,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           const key = getSessionKey(newSession);
           const existing = prevMap.get(key);
           
-          // If session doesn't exist in prev, it's new
           if (!existing) {
             hasChanges = true;
             return newSession;
           }
           
-          // Compare relevant fields to detect changes
           const changed = (
             existing.state !== newSession.state ||
             existing.totalTokens !== newSession.totalTokens ||
@@ -468,11 +278,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
             return newSession;
           }
           
-          // No change - keep the existing reference
           return existing;
         });
         
-        // If nothing changed, return the same array reference
         return hasChanges ? merged : prev;
       });
       try {
@@ -489,27 +297,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, [connectionState, listAuthoritativeSessions]);
 
-  // Update session in list from WebSocket event data
   const updateSessionFromEvent = useCallback((sessionKey: string, updates: Partial<Session>) => {
     setSessions(prev => {
       const idx = prev.findIndex(s => getSessionKey(s) === sessionKey);
       if (idx === -1) {
-        // New session appeared that we don't have - schedule a refresh
-        // Use setTimeout to avoid calling during render
         setTimeout(() => refreshSessions(), 100);
         return prev;
       }
       
-      // Check if the update actually changes anything
       const existing = prev[idx];
       const hasChanges = Object.entries(updates).some(
         ([key, value]) => existing[key as keyof Session] !== value
       );
       
-      // If nothing changed, return the same array reference
       if (!hasChanges) return prev;
       
-      // Update only the changed session, preserving other references
       return prev.map((s, i) => {
         if (i !== idx) return s;
         return { ...s, ...updates, lastActivity: Date.now() };
@@ -517,7 +319,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     });
   }, [refreshSessions]);
 
-  // Extract session updates (state + token data) from a typed agent event payload
   const extractSessionUpdates = useCallback((state: string | undefined, payload: AgentEventPayload | ChatEventPayload): Partial<Session> => {
     const updates: Partial<Session> = {};
     if (state) updates.state = state;
@@ -536,7 +337,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }, 1500);
   }, [refreshSessions]);
 
-  // Subscribe to gateway events for granular status tracking + session state sync + agent log + event log
+  // Subscribe to gateway events
   useEffect(() => {
     const unsub = subscribe((msg: GatewayEvent) => {
       const evt = msg.event;
@@ -544,14 +345,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       addEvent(msg);
 
-      // Session granular status tracking + state sync from agent/chat events
       if ((evt === 'agent' || evt === 'chat') && p.sessionKey) {
         const sk = p.sessionKey;
         const typedPayload = evt === 'agent'
           ? (msg.payload || {}) as AgentEventPayload
           : (msg.payload || {}) as ChatEventPayload;
 
-        // Handle lifecycle events from CLI agents (Codex, Claude Code CLI)
         if (evt === 'agent') {
           const ap = typedPayload as AgentEventPayload;
 
@@ -584,7 +383,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Handle chat events
         if (evt === 'chat') {
           const cp = typedPayload as ChatEventPayload;
           const state = cp.state || '';
@@ -596,7 +394,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           } else if (state === 'final') {
             setGranularStatus(sk, { status: 'DONE', since: Date.now() });
             refreshSessions();
-            // Delayed refresh to catch token counts that may not be available immediately.
             scheduleDelayedRefresh();
           } else if (state === 'error') {
             setGranularStatus(sk, { status: 'ERROR', since: Date.now() });
@@ -605,12 +402,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Also handle legacy state strings for backward compatibility
         const state = evt === 'agent'
           ? ((typedPayload as AgentEventPayload).state || (typedPayload as AgentEventPayload).agentState || '')
           : ((typedPayload as ChatEventPayload).state || '');
 
-        // Map legacy state strings to granular status (only if not already handled above)
         if (evt === 'agent' && !(typedPayload as AgentEventPayload).stream) {
           if (BUSY_STATES.has(state)) {
             setGranularStatus(sk, { status: 'THINKING', since: Date.now() });
@@ -637,7 +432,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       feedAgentLog(evt, p);
     });
 
-    // Cleanup: cancel all pending DONE→IDLE timeouts
     return () => {
       unsub();
       for (const key of Object.keys(doneTimeoutsRef.current)) {
@@ -651,31 +445,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
   }, [subscribe, addEvent, setGranularStatus, feedAgentLog, updateSessionFromEvent, extractSessionUpdates, refreshSessions, scheduleDelayedRefresh]);
 
-  // Poll sessions when connected (reduced to 30s - WebSocket events provide real-time updates)
+  // Poll sessions when connected
   useEffect(() => {
     if (connectionState !== 'connected') return;
     refreshSessions();
-    // Polling is now just a fallback for catching missed updates
     const iv = setInterval(() => refreshSessions(), 30000);
     return () => clearInterval(iv);
   }, [connectionState, refreshSessions]);
-
-  // Load agent log on mount
-  useEffect(() => {
-    const controller = new AbortController();
-    (async () => {
-      try {
-        const res = await fetch('/api/agentlog', { signal: controller.signal });
-        const entries: AgentLogEntry[] = await res.json();
-        setAgentLogEntries(entries.slice().reverse().slice(0, 100));
-      } catch (err) {
-        if (err instanceof Error && err.name !== 'AbortError') {
-          console.debug('[SessionContext] Failed to load agent log:', err.message);
-        }
-      }
-    })();
-    return () => controller.abort();
-  }, []);
 
   const deleteSession = useCallback(async (sessionKey: string) => {
     const authoritativeSessions = await listAuthoritativeSessions();
@@ -759,8 +535,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const idempotencyKey = `spawn-subagent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     await rpc('chat.send', { sessionKey: parentSessionKey, message, idempotencyKey });
 
-    // A spawned child can take a while to appear in sessions.list for non-main
-    // roots, even after the parent agent accepts the request.
     const deadline = Date.now() + SUBAGENT_DISCOVERY_TIMEOUT_MS;
     while (Date.now() < deadline) {
       try {
