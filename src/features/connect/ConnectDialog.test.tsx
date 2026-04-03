@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ConnectDialog } from './ConnectDialog';
 
 vi.mock('@/components/ui/dialog', () => ({
@@ -116,7 +116,9 @@ describe('ConnectDialog', () => {
     const connectButton = screen.getByText('Manual connect');
     fireEvent.click(connectButton);
 
-    expect(onConnect).toHaveBeenCalledWith('ws://localhost:1234/ws', '');
+    await waitFor(() => {
+      expect(onConnect).toHaveBeenCalledWith('ws://localhost:1234/ws', '');
+    });
   });
 
   it('canonicalizes loopback aliases to the official gateway url on connect', async () => {
@@ -135,7 +137,9 @@ describe('ConnectDialog', () => {
 
     fireEvent.click(screen.getByText('Manual connect'));
 
-    expect(onConnect).toHaveBeenCalledWith('ws://127.0.0.1:1234/ws', '');
+    await waitFor(() => {
+      expect(onConnect).toHaveBeenCalledWith('ws://127.0.0.1:1234/ws', '');
+    });
   });
 
   it('keeps token entry visible for saved custom urls when official url differs', async () => {
@@ -156,6 +160,8 @@ describe('ConnectDialog', () => {
 
     fireEvent.click(screen.getByText('Manual connect'));
 
-    expect(onConnect).toHaveBeenCalledWith('ws://custom.example/ws', 'custom-token');
+    await waitFor(() => {
+      expect(onConnect).toHaveBeenCalledWith('ws://custom.example/ws', 'custom-token');
+    });
   });
 });
