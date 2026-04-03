@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { MemoryRouter } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
@@ -14,6 +15,14 @@ function createDeferred<T>() {
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+
+function renderApp() {
+  return render(
+    <MemoryRouter>
+      <App />
+    </MemoryRouter>,
+  );
 }
 
 const {
@@ -391,12 +400,12 @@ describe('App save toast workspace scoping', () => {
     const mainSave = createDeferred<SaveResult>();
     saveFileByAgent.main.mockReturnValue(mainSave.promise);
 
-    const { rerender } = render(<App />);
+    const { rerender } = renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save shared.md' }));
 
     sessionContext.currentSession = 'agent:bravo:main';
-    rerender(<App />);
+    rerender(<MemoryRouter><App /></MemoryRouter>);
 
     expect(screen.getByTestId('workspace-agent')).toHaveTextContent('main');
 
@@ -412,7 +421,7 @@ describe('App save toast workspace scoping', () => {
   it('keeps the shared workspace agent pinned to main after chat switches', async () => {
     saveFileByAgent.main.mockResolvedValue({ ok: false, conflict: true });
 
-    const { rerender } = render(<App />);
+    const { rerender } = renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save shared.md' }));
 
@@ -420,7 +429,7 @@ describe('App save toast workspace scoping', () => {
 
     const snapshotsBeforeSwitch = tabRenderSnapshots.length;
     sessionContext.currentSession = 'agent:bravo:main';
-    rerender(<App />);
+    rerender(<MemoryRouter><App /></MemoryRouter>);
 
     const switchSnapshots = tabRenderSnapshots.slice(snapshotsBeforeSwitch);
     expect(switchSnapshots[0]).toMatchObject({
@@ -433,7 +442,7 @@ describe('App save toast workspace scoping', () => {
   it('keeps an active save conflict toast across chat switches so reload still targets the shared workspace', async () => {
     saveFileByAgent.main.mockResolvedValue({ ok: false, conflict: true });
 
-    const { rerender } = render(<App />);
+    const { rerender } = renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save shared.md' }));
 
@@ -441,7 +450,7 @@ describe('App save toast workspace scoping', () => {
     expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
 
     sessionContext.currentSession = 'agent:bravo:main';
-    rerender(<App />);
+    rerender(<MemoryRouter><App /></MemoryRouter>);
 
     expect(screen.getByTestId('workspace-agent')).toHaveTextContent('main');
     expect(screen.getByText('File changed externally.')).toBeInTheDocument();
@@ -452,19 +461,19 @@ describe('App save toast workspace scoping', () => {
   it('does not lose the shared-workspace save conflict toast after switching away and back', async () => {
     saveFileByAgent.main.mockResolvedValue({ ok: false, conflict: true });
 
-    const { rerender } = render(<App />);
+    const { rerender } = renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Save shared.md' }));
 
     expect(await screen.findByText('File changed externally.')).toBeInTheDocument();
 
     sessionContext.currentSession = 'agent:bravo:main';
-    rerender(<App />);
+    rerender(<MemoryRouter><App /></MemoryRouter>);
 
     expect(screen.getByText('File changed externally.')).toBeInTheDocument();
 
     sessionContext.currentSession = 'agent:alpha:main';
-    rerender(<App />);
+    rerender(<MemoryRouter><App /></MemoryRouter>);
 
     expect(screen.getByTestId('workspace-agent')).toHaveTextContent('main');
     expect(screen.getByText('File changed externally.')).toBeInTheDocument();
@@ -488,7 +497,7 @@ describe('App shared workspace navigation', () => {
   });
 
   it('does not guard same-agent subagent navigation', () => {
-    render(<App />);
+    renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Alpha Subagent' }));
 
@@ -497,7 +506,7 @@ describe('App shared workspace navigation', () => {
   });
 
   it('does not guard cross-agent session selection because chat switches no longer switch workspaces', () => {
-    render(<App />);
+    renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
 
@@ -508,7 +517,7 @@ describe('App shared workspace navigation', () => {
   });
 
   it('does not surface the old workspace-switch confirmation on chat changes', () => {
-    render(<App />);
+    renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Select Bravo' }));
 
@@ -518,7 +527,7 @@ describe('App shared workspace navigation', () => {
   });
 
   it('does not guard root-agent creation behind workspace prompts', async () => {
-    render(<App />);
+    renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Spawn Root Charlie' }));
 
@@ -538,7 +547,7 @@ describe('App shared workspace navigation', () => {
   });
 
   it('does not guard cross-agent subagent creation either', async () => {
-    render(<App />);
+    renderApp();
 
     fireEvent.click(screen.getByRole('button', { name: 'Spawn Bravo Subagent' }));
 
