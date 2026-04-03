@@ -11,11 +11,10 @@ import {
   useRef,
   useCallback,
   useMemo,
-  useReducer,
   lazy,
   Suspense,
 } from 'react';
-import { AlertTriangle, CheckCircle2, RotateCw, PlugZap, Mic, Loader2, Square, SidebarOpen } from 'lucide-react';
+import { SidebarOpen } from 'lucide-react';
 import type { SearchMatchTarget } from '@/features/chat/useMessageSearch';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useSessionContext, type SpawnSessionOpts } from '@/contexts/SessionContext';
@@ -25,21 +24,25 @@ import { getSessionKey } from '@/types';
 import { useConnectionManager } from '@/hooks/useConnectionManager';
 import { useDashboardData } from '@/hooks/useDashboardData';
 import { useGatewayRestart } from '@/hooks/useGatewayRestart';
-import { ConnectDialog } from '@/features/connect/ConnectDialog';
+import { useChatVisibility } from '@/hooks/useChatVisibility';
+import { NotificationBanners } from '@/components/layout/NotificationBanners';
+import { AppDialogs } from '@/components/layout/AppDialogs';
 import { TopBar } from '@/components/TopBar';
 import { StatusBar } from '@/components/StatusBar';
-import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { WorkspaceSwitchDialog } from '@/components/WorkspaceSwitchDialog';
+
 import { ChatPanel, type ChatPanelHandle } from '@/features/chat/ChatPanel';
-import { invalidatePhrasesCache, useVoiceInput } from '@/features/voice/useVoiceInput';
+import { useVoiceManager } from '@/hooks/useVoiceManager';
 import type { TTSProvider } from '@/features/tts/useTTS';
 import type { ViewMode } from '@/features/command-palette/commands';
 import { getContextLimit } from '@/lib/constants';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { usePanelLayout, TOOL_PANEL_RAIL_WIDTH_PX, CHAT_HISTORY_RAIL_WIDTH_PX } from '@/hooks/usePanelLayout';
 import { createCommands } from '@/features/command-palette/commands';
 import { PanelErrorBoundary } from '@/components/PanelErrorBoundary';
-import { SpawnAgentDialog } from '@/features/sessions/SpawnAgentDialog';
-import { FileTreePanel, TabbedContentArea, useOpenFiles, type FileTreeChangeEvent } from '@/features/file-browser';
+
+import { FileTreePanel, TabbedContentArea } from '@/features/file-browser';
+import { useWorkspaceFiles } from '@/hooks/useWorkspaceFiles';
+import { useWorkspaceSwitch } from '@/hooks/useWorkspaceSwitch';
 import { isImageFile } from '@/features/file-browser/utils/fileTypes';
 import { buildAgentRootSessionKey, getSessionDisplayLabel, getTopLevelAgentSessions } from '@/features/sessions/sessionKeys';
 import { getWorkspaceAgentId, getWorkspaceRootSessionKey } from '@/features/workspace/workspaceScope';
@@ -59,37 +62,11 @@ interface AppProps {
   onLogout?: () => void;
 }
 
-interface PendingWorkspaceSwitch {
-  targetLabel: string;
-  execute: () => Promise<void>;
-  resolve: (didSwitch: boolean) => void;
-  reject: (error: unknown) => void;
-}
-
-const CHAT_VISIBILITY_STORAGE_KEY = 'nerve-visible-chat-session-keys-v1';
 const CHAT_HISTORY_WIDTH_MIGRATION_KEY = 'nerve-chat-history-width-migrated-v2';
 const DEFAULT_CHAT_HISTORY_PANEL_RATIO = 50;
-const TOOL_PANEL_WIDTH_STORAGE_KEY = 'nerve-tool-panel-width-v3';
-const TOOL_PANEL_CHAT_BASELINE_STORAGE_KEY = 'nerve-tool-panel-chat-baseline-v1';
-const TOOL_PANEL_COLLAPSED_STORAGE_KEY = 'nerve-tool-panel-collapsed';
-const TOOL_PANEL_SELECTED_STORAGE_KEY = 'nerve-tool-panel-selected-tool';
-const CHAT_HISTORY_COLLAPSED_STORAGE_KEY = 'nerve-chat-history-collapsed';
-const CHAT_HISTORY_WIDTH_STORAGE_KEY = 'nerve-chat-history-width';
-const TOOL_PANEL_RAIL_WIDTH_PX = 56;
-const CHAT_HISTORY_RAIL_WIDTH_PX = 56;
+
 const SHARED_WORKSPACE_AGENT_ID = 'main';
 const MOBILE_ROUTE_PATH = '/m';
-
-function buildWorkspaceSwitchErrorMessage(result: {
-  failedPath?: string;
-  conflict?: boolean;
-}): string {
-  const fileLabel = result.failedPath || 'a dirty file';
-  if (result.conflict) {
-    return `${fileLabel} changed on disk. Resolve it before switching agents.`;
-  }
-  return `Could not save ${fileLabel}. Resolve it before switching agents.`;
-}
 
 export default function App({ onLogout }: AppProps) {
   const isMobileRoute = typeof window !== 'undefined' && window.location.pathname === MOBILE_ROUTE_PATH;
@@ -128,98 +105,27 @@ export default function App({ onLogout }: AppProps) {
     setTheme, setFont,
   } = useSettings();
 
-  const [voiceLang, setVoiceLang] = useState('en');
-  const [voicePhrasesVersion, setVoicePhrasesVersion] = useState(0);
-  const [voiceOriginSessionKey, setVoiceOriginSessionKey] = useState<string | null>(null);
-  const voiceOriginSessionKeyRef = useRef<string | null>(null);
-  const [voiceStartedAt, setVoiceStartedAt] = useState<number | null>(null);
-  const [voiceElapsedMs, setVoiceElapsedMs] = useState(0);
-
-  useEffect(() => {
-    voiceOriginSessionKeyRef.current = voiceOriginSessionKey;
-  }, [voiceOriginSessionKey]);
-
-  useEffect(() => {
-    let currentController: AbortController | null = null;
-
-    const fetchLang = () => {
-      currentController?.abort();
-      const controller = new AbortController();
-      currentController = controller;
-
-      fetch('/api/language', { signal: controller.signal })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (!controller.signal.aborted && data?.language) {
-            setVoiceLang(data.language);
-          }
-        })
-        .catch((err) => {
-          if ((err as DOMException)?.name === 'AbortError') return;
-        });
-    };
-
-    const handlePhrasesChanged = () => {
-      invalidatePhrasesCache();
-      setVoicePhrasesVersion((v) => v + 1);
-    };
-
-    fetchLang();
-    window.addEventListener('nerve:language-changed', fetchLang);
-    window.addEventListener('nerve:voice-phrases-changed', handlePhrasesChanged);
-    return () => {
-      window.removeEventListener('nerve:language-changed', fetchLang);
-      window.removeEventListener('nerve:voice-phrases-changed', handlePhrasesChanged);
-      currentController?.abort();
-    };
-  }, []);
-
-  const effectiveSttInputMode = sttProvider === 'openai' ? 'local' : sttInputMode;
   const {
+    voiceOriginSessionKey,
+    voiceElapsedMs,
     voiceState,
     interimTranscript,
-    startRecording,
     stopAndTranscribe,
     discardRecording,
-    wakeWordEnabled: voiceWakeWordEnabled,
+    voiceWakeWordEnabled,
     toggleWakeWord,
-    error: voiceError,
-    clearError: clearVoiceError,
-  } = useVoiceInput((text) => {
-    const targetSessionKey = voiceOriginSessionKeyRef.current;
-    if (!targetSessionKey) return;
-    void handleSendToSession(targetSessionKey, `[voice] ${text}`);
-  }, agentName, voiceLang, voicePhrasesVersion, effectiveSttInputMode);
-
-  useEffect(() => {
-    if (voiceState === 'recording' && voiceStartedAt === null) {
-      const startedAt = Date.now();
-      setVoiceStartedAt(startedAt);
-      setVoiceElapsedMs(0);
-      return;
-    }
-
-    if (voiceState === 'idle' || voiceState === 'listening') {
-      setVoiceStartedAt(null);
-      setVoiceElapsedMs(0);
-      setVoiceOriginSessionKey(null);
-    }
-  }, [voiceStartedAt, voiceState]);
-
-  useEffect(() => {
-    if (voiceStartedAt === null || (voiceState !== 'recording' && voiceState !== 'transcribing')) return;
-
-    const tick = () => setVoiceElapsedMs(Date.now() - voiceStartedAt);
-    tick();
-    const interval = window.setInterval(tick, 250);
-    return () => window.clearInterval(interval);
-  }, [voiceStartedAt, voiceState]);
-
-  const handleStartPersistentRecording = useCallback(async () => {
-    if (!currentSession) return;
-    setVoiceOriginSessionKey(currentSession);
-    await startRecording();
-  }, [currentSession, startRecording]);
+    voiceError,
+    clearVoiceError,
+    handleStartPersistentRecording,
+    voiceOriginSessionLabel,
+  } = useVoiceManager({
+    currentSession,
+    sessions,
+    agentName,
+    sttProvider,
+    sttInputMode,
+    handleSendToSession,
+  });
 
   // Connection management (extracted hook)
   const {
@@ -234,236 +140,42 @@ export default function App({ onLogout }: AppProps) {
     openManualConnect,
   } = useConnectionManager();
 
-  // Track file change events for tree refresh. Sequence keeps repeated same-path updates visible.
-  const [lastChangedEvent, setLastChangedEvent] = useState<FileTreeChangeEvent | null>(null);
-  const [revealRequest, setRevealRequest] = useState<{
-    id: number;
-    path: string;
-    kind: 'file' | 'directory';
-    agentId: string;
-  } | null>(null);
-  const fileTreeChangeSequenceRef = useRef(0);
-
-  const initialCompactLayout = typeof window !== 'undefined' && window.matchMedia('(max-width: 900px)').matches;
-  const initialDesktopFileBrowserCollapsed = (() => {
-    try {
-      const saved = localStorage.getItem('nerve-file-tree-collapsed');
-      if (saved !== null) return saved === 'true';
-    } catch {
-      // ignore storage errors and fall back to desktop default
-    }
-
-    return false;
-  })();
-
-  // File browser collapse state for mobile optimization
-  const [fileBrowserCollapsed, setFileBrowserCollapsedState] = useState(() => (
-    initialCompactLayout ? true : initialDesktopFileBrowserCollapsed
-  ));
-  const [desktopFileBrowserCollapsed, setDesktopFileBrowserCollapsed] = useState(initialDesktopFileBrowserCollapsed);
-
-  // Responsive layout state (chat-first on smaller viewports)
-  const [isCompactLayout, setIsCompactLayout] = useState(initialCompactLayout);
-
-  const persistDesktopFileBrowserCollapsed = useCallback((collapsed: boolean) => {
-    setDesktopFileBrowserCollapsed(collapsed);
-
-    try {
-      localStorage.setItem('nerve-file-tree-collapsed', String(collapsed));
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
-
-  const setFileBrowserCollapsed = useCallback((nextCollapsed: boolean | ((prev: boolean) => boolean)) => {
-    setFileBrowserCollapsedState(prevCollapsed => {
-      const resolvedCollapsed = typeof nextCollapsed === 'function'
-        ? nextCollapsed(prevCollapsed)
-        : nextCollapsed;
-
-      if (!isCompactLayout) {
-        persistDesktopFileBrowserCollapsed(resolvedCollapsed);
-      }
-
-      return resolvedCollapsed;
-    });
-  }, [isCompactLayout, persistDesktopFileBrowserCollapsed]);
-
-  /** Toggle file browser collapse state (mobile). */
-  const handleToggleFileBrowser = useCallback(() => {
-    setFileBrowserCollapsed(prev => !prev);
-  }, [setFileBrowserCollapsed]);
-
-  const setToolPanelCollapsed = useCallback((nextCollapsed: boolean | ((prev: boolean) => boolean)) => {
-    setToolPanelCollapsedState(prevCollapsed => {
-      const resolvedCollapsed = typeof nextCollapsed === 'function'
-        ? nextCollapsed(prevCollapsed)
-        : nextCollapsed;
-
-      try {
-        localStorage.setItem(TOOL_PANEL_COLLAPSED_STORAGE_KEY, String(resolvedCollapsed));
-      } catch {
-        // ignore storage errors
-      }
-
-      return resolvedCollapsed;
-    });
-  }, []);
-
-  const setSelectedToolId = useCallback((nextToolId: string | null) => {
-    setSelectedToolIdState(nextToolId);
-    try {
-      if (nextToolId) localStorage.setItem(TOOL_PANEL_SELECTED_STORAGE_KEY, nextToolId);
-      else localStorage.removeItem(TOOL_PANEL_SELECTED_STORAGE_KEY);
-    } catch {
-      // ignore storage errors
-    }
-    setToolPanelCollapsed(false);
-  }, []);
-
-  const setToolPanelWidth = useCallback((nextWidth: number) => {
-    const clamped = Math.max(240, Math.min(1600, Math.round(nextWidth)));
-    console.debug('[setToolPanelWidth]', { nextWidth, clamped });
-    setToolPanelWidthState(clamped);
-    try {
-      localStorage.setItem(TOOL_PANEL_WIDTH_STORAGE_KEY, String(clamped));
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
-
-  const setToolPanelChatBaselineWidth = useCallback((nextWidth: number) => {
-    const clamped = Math.max(320, Math.min(2400, Math.round(nextWidth)));
-    setToolPanelChatBaselineWidthState(clamped);
-    try {
-      localStorage.setItem(TOOL_PANEL_CHAT_BASELINE_STORAGE_KEY, String(clamped));
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
-
-  const handleToggleToolPanel = useCallback(() => {
-    setToolPanelCollapsed(prev => !prev);
-  }, [setToolPanelCollapsed]);
-
-  const setChatHistoryCollapsed = useCallback((nextCollapsed: boolean | ((prev: boolean) => boolean)) => {
-    setChatHistoryCollapsedState(prevCollapsed => {
-      const resolved = typeof nextCollapsed === 'function' ? nextCollapsed(prevCollapsed) : nextCollapsed;
-      try {
-        localStorage.setItem(CHAT_HISTORY_COLLAPSED_STORAGE_KEY, String(resolved));
-      } catch {
-        // ignore storage errors
-      }
-      return resolved;
-    });
-  }, []);
-
-  const handleToggleChatHistory = useCallback(() => {
-    setChatHistoryCollapsed(prev => !prev);
-  }, [setChatHistoryCollapsed]);
-
-  const setChatHistoryWidth = useCallback((nextWidth: number) => {
-    const clamped = Math.max(240, Math.min(520, Math.round(nextWidth)));
-    setChatHistoryWidthState(clamped);
-    try {
-      localStorage.setItem(CHAT_HISTORY_WIDTH_STORAGE_KEY, String(clamped));
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
+  const {
+    fileBrowserCollapsed, setFileBrowserCollapsed,
+    isCompactLayout,
+    toolPanelCollapsed, setToolPanelCollapsed, selectedToolId, setSelectedToolId,
+    toolPanelWidth, setToolPanelWidth, toolPanelChatBaselineWidth,
+    setToolPanelManualWidth, toolPanelDebugMetrics,
+    chatHistoryCollapsed, chatHistoryWidth, setChatHistoryWidth,
+    isMobileTopBarHidden, desktopRightPanelWidth,
+    handleToggleFileBrowser, handleToggleToolPanel, handleToggleChatHistory, toggleMobileTopBar,
+    activeChatPaneRef, activeToolPaneRef, chatToolRegionRef, toolDragFrameRef, toolDragPendingWidthRef,
+  } = usePanelLayout();
 
   const sharedWorkspaceAgentId = SHARED_WORKSPACE_AGENT_ID;
-  const [visibleChatKeys, setVisibleChatKeys] = useState<Set<string>>(() => new Set());
-  const [chatVisibilityInitialized, setChatVisibilityInitialized] = useState(false);
 
   // File browser state stays pinned to the shared/main workspace.
   const {
     openFiles, activeTab, setActiveTab,
-    openFile, closeFile, updateContent, saveFile, reloadFile,
-    handleFileChanged, remapOpenPaths, closeOpenPathsByPrefix,
+    openFile, closeFile, updateContent, reloadFile,
+    remapOpenPaths, closeOpenPathsByPrefix,
     saveAllDirtyFiles, discardAllDirtyFiles,
-  } = useOpenFiles(sharedWorkspaceAgentId);
+    saveToast, dismissSaveToast,
+    workspaceVersion,
+    lastChangedEvent, onFileChanged,
+    revealRequest, setRevealRequest,
+    handleSaveFile,
+  } = useWorkspaceFiles(sharedWorkspaceAgentId);
 
-  // Save with workspace-scoped conflict toast
-  const [saveToast, setSaveToast] = useState<{
-    agentId: string;
-    path: string;
-    type: 'conflict';
-    workspaceVersion: number;
-  } | null>(null);
-  const [workspaceVersion, bumpWorkspaceVersion] = useReducer((version: number) => version + 1, 0);
-  const saveToastTimerRef = useRef<number | null>(null);
-  const workspaceAgentIdRef = useRef(sharedWorkspaceAgentId);
-  const [pendingWorkspaceSwitch, setPendingWorkspaceSwitch] = useState<PendingWorkspaceSwitch | null>(null);
-  const [workspaceSwitchAction, setWorkspaceSwitchAction] = useState<'save' | 'discard' | null>(null);
-  const [workspaceSwitchError, setWorkspaceSwitchError] = useState<string | null>(null);
-
-  const clearSaveToastTimer = useCallback(() => {
-    if (saveToastTimerRef.current !== null) {
-      window.clearTimeout(saveToastTimerRef.current);
-      saveToastTimerRef.current = null;
-    }
-  }, []);
-
-  const dismissSaveToast = useCallback(() => {
-    clearSaveToastTimer();
-    setSaveToast(null);
-  }, [clearSaveToastTimer]);
-
-  const showSaveToastForAgent = useCallback((
-    targetAgentId: string,
-    nextToast: { path: string; type: 'conflict' },
-  ) => {
-    if (workspaceAgentIdRef.current !== targetAgentId) return;
-
-    clearSaveToastTimer();
-    const toastForAgent = {
-      ...nextToast,
-      agentId: targetAgentId,
-      workspaceVersion,
-    };
-    setSaveToast(toastForAgent);
-    saveToastTimerRef.current = window.setTimeout(() => {
-      setSaveToast((currentToast) => (currentToast === toastForAgent ? null : currentToast));
-      saveToastTimerRef.current = null;
-    }, 5000);
-  }, [clearSaveToastTimer, workspaceVersion]);
-
-  useEffect(() => {
-    workspaceAgentIdRef.current = sharedWorkspaceAgentId;
-    bumpWorkspaceVersion();
-    clearSaveToastTimer();
-  }, [clearSaveToastTimer, sharedWorkspaceAgentId]);
-
-  useEffect(() => () => clearSaveToastTimer(), [clearSaveToastTimer]);
-
-  const handleSaveFile = useCallback(async (filePath: string) => {
-    const requestAgentId = sharedWorkspaceAgentId;
-    const result = await saveFile(filePath);
-
-    if (workspaceAgentIdRef.current !== requestAgentId) {
-      return;
-    }
-
-    if (!result.ok) {
-      if (result.conflict) {
-        showSaveToastForAgent(requestAgentId, { path: filePath, type: 'conflict' });
-      }
-      return;
-    }
-
-    dismissSaveToast();
-  }, [dismissSaveToast, saveFile, showSaveToastForAgent, sharedWorkspaceAgentId]);
-
-  // Single file.changed handler, feeds both open files and tree refresh.
-  const onFileChanged = useCallback((path: string, targetAgentId: string) => {
-    handleFileChanged(path, targetAgentId);
-    setLastChangedEvent({
-      path,
-      agentId: targetAgentId,
-      sequence: ++fileTreeChangeSequenceRef.current,
-    });
-  }, [handleFileChanged]);
+  const {
+    pendingWorkspaceSwitch,
+    workspaceSwitchAction,
+    workspaceSwitchError,
+    requestWorkspaceTransition,
+    handleCancelWorkspaceSwitch,
+    handleSaveAndSwitch,
+    handleDiscardAndSwitch,
+  } = useWorkspaceSwitch(saveAllDirtyFiles, discardAllDirtyFiles);
 
   // Dashboard data (extracted hook) — single SSE connection handles all events
   const { tokenData, refreshMemories } = useDashboardData({
@@ -475,79 +187,10 @@ export default function App({ onLogout }: AppProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [booted, setBooted] = useState(false);
   const [logGlow, setLogGlow] = useState(false);
-  const [isMobileTopBarHidden, setIsMobileTopBarHidden] = useState(false);
-  const [desktopRightPanelWidth] = useState<number | null>(null);
-  const [chatHistoryCollapsed, setChatHistoryCollapsedState] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(CHAT_HISTORY_COLLAPSED_STORAGE_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [chatHistoryWidth, setChatHistoryWidthState] = useState<number>(() => {
-    try {
-      const saved = localStorage.getItem(CHAT_HISTORY_WIDTH_STORAGE_KEY);
-      const parsed = saved ? Number(saved) : NaN;
-      return Number.isFinite(parsed) ? Math.max(240, Math.min(520, parsed)) : 320;
-    } catch {
-      return 320;
-    }
-  });
-  const [toolPanelCollapsed, setToolPanelCollapsedState] = useState<boolean>(() => {
-    try {
-      const saved = localStorage.getItem(TOOL_PANEL_COLLAPSED_STORAGE_KEY);
-      return saved === null ? false : saved === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [selectedToolId, setSelectedToolIdState] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(TOOL_PANEL_SELECTED_STORAGE_KEY) || null;
-    } catch {
-      return null;
-    }
-  });
-  const [toolPanelWidth, setToolPanelWidthState] = useState<number | null>(() => {
-    try {
-      const saved = localStorage.getItem(TOOL_PANEL_WIDTH_STORAGE_KEY);
-      if (!saved) return null;
-      const parsed = Number(saved);
-      return Number.isFinite(parsed) && parsed >= 320 ? parsed : null;
-    } catch {
-      return null;
-    }
-  });
-  const [toolPanelChatBaselineWidth, setToolPanelChatBaselineWidthState] = useState<number | null>(() => {
-    try {
-      const saved = localStorage.getItem(TOOL_PANEL_CHAT_BASELINE_STORAGE_KEY);
-      if (!saved) return null;
-      const parsed = Number(saved);
-      return Number.isFinite(parsed) && parsed >= 320 ? parsed : null;
-    } catch {
-      return null;
-    }
-  });
-  const [toolPanelDebugMetrics, setToolPanelDebugMetrics] = useState<{
-    chatWidth: number | null;
-    toolWidth: number | null;
-    combinedWidth: number | null;
-    baselineWidth: number | null;
-  }>({
-    chatWidth: null,
-    toolWidth: null,
-    combinedWidth: null,
-    baselineWidth: null,
-  });
-  const [chatToolRegionWidth, setChatToolRegionWidth] = useState<number | null>(null);
-  const [toolPanelManualWidth, setToolPanelManualWidth] = useState(false);
+
   const prevLogCount = useRef(0);
   const chatPanelRef = useRef<ChatPanelHandle>(null);
-  const activeChatPaneRef = useRef<HTMLDivElement | null>(null);
-  const activeToolPaneRef = useRef<HTMLDivElement | null>(null);
-  const chatToolRegionRef = useRef<HTMLDivElement | null>(null);
-  const toolDragFrameRef = useRef<number | null>(null);
-  const toolDragPendingWidthRef = useRef<number | null>(null);
+
 
   // Gateway restart
   const {
@@ -606,9 +249,7 @@ export default function App({ onLogout }: AppProps) {
     setRevealRequest({ id: Date.now(), path: data.path, kind: data.type, agentId: sharedWorkspaceAgentId });
   }, [openFile, setFileBrowserCollapsed, sharedWorkspaceAgentId]);
 
-  const toggleMobileTopBar = useCallback(() => {
-    setIsMobileTopBarHidden((prev) => !prev);
-  }, []);
+
 
   // Build command list with stable references
   const openSettings = useCallback(() => setSettingsOpen(true), []);
@@ -682,13 +323,6 @@ export default function App({ onLogout }: AppProps) {
     return agentName;
   }, [currentSessionData, agentName]);
 
-  const voiceOriginSessionLabel = useMemo(() => {
-    if (!voiceOriginSessionKey) return null;
-    const originSession = sessions.find((session) => getSessionKey(session) === voiceOriginSessionKey);
-    if (originSession) return getSessionDisplayLabel(originSession, agentName);
-    return voiceOriginSessionKey;
-  }, [agentName, sessions, voiceOriginSessionKey]);
-
   const handleRenameCurrentSession = useCallback(async (nextTitle: string) => {
     if (!currentSession) return;
     await renameSession(currentSession, nextTitle);
@@ -726,76 +360,6 @@ export default function App({ onLogout }: AppProps) {
     const targetAgentId = getWorkspaceAgentId(sessionKey);
     return targetAgentId === 'main' ? `${agentName} (main)` : `Agent ${targetAgentId}`;
   }, [agentName, sessions]);
-
-  const requestWorkspaceTransition = useCallback((
-    _targetSessionKey: string,
-    _targetLabel: string,
-    execute: () => Promise<void>,
-  ) => {
-    // Chat navigation is intentionally decoupled from the file browser workspace.
-    // The shared workspace stays pinned to `main`, so switching chats should not
-    // trigger save/discard prompts that were meant for cross-workspace navigation.
-    return execute().then(() => true);
-  }, []);
-
-  const handleCancelWorkspaceSwitch = useCallback(() => {
-    if (workspaceSwitchAction || !pendingWorkspaceSwitch) return;
-
-    pendingWorkspaceSwitch.resolve(false);
-    setPendingWorkspaceSwitch(null);
-    setWorkspaceSwitchAction(null);
-    setWorkspaceSwitchError(null);
-  }, [pendingWorkspaceSwitch, workspaceSwitchAction]);
-
-  const handleSaveAndSwitch = useCallback(async () => {
-    if (!pendingWorkspaceSwitch || workspaceSwitchAction) return;
-
-    const pendingSwitch = pendingWorkspaceSwitch;
-    setWorkspaceSwitchAction('save');
-    setWorkspaceSwitchError(null);
-
-    const result = await saveAllDirtyFiles();
-    if (!result.ok) {
-      setWorkspaceSwitchAction(null);
-      setWorkspaceSwitchError(buildWorkspaceSwitchErrorMessage(result));
-      return;
-    }
-
-    try {
-      await pendingSwitch.execute();
-      pendingSwitch.resolve(true);
-      setPendingWorkspaceSwitch(null);
-      setWorkspaceSwitchError(null);
-    } catch (error) {
-      pendingSwitch.reject(error);
-      setPendingWorkspaceSwitch(null);
-      setWorkspaceSwitchError(null);
-    } finally {
-      setWorkspaceSwitchAction(null);
-    }
-  }, [pendingWorkspaceSwitch, saveAllDirtyFiles, workspaceSwitchAction]);
-
-  const handleDiscardAndSwitch = useCallback(async () => {
-    if (!pendingWorkspaceSwitch || workspaceSwitchAction) return;
-
-    const pendingSwitch = pendingWorkspaceSwitch;
-    setWorkspaceSwitchAction('discard');
-    setWorkspaceSwitchError(null);
-    discardAllDirtyFiles();
-
-    try {
-      await pendingSwitch.execute();
-      pendingSwitch.resolve(true);
-      setPendingWorkspaceSwitch(null);
-      setWorkspaceSwitchError(null);
-    } catch (error) {
-      pendingSwitch.reject(error);
-      setPendingWorkspaceSwitch(null);
-      setWorkspaceSwitchError(null);
-    } finally {
-      setWorkspaceSwitchAction(null);
-    }
-  }, [discardAllDirtyFiles, pendingWorkspaceSwitch, workspaceSwitchAction]);
 
   const handleSessionChange = useCallback((key: string) => {
     setChatSearchTarget(null);
@@ -848,39 +412,7 @@ export default function App({ onLogout }: AppProps) {
     });
   }, [handleSpawnSession, sessions]);
 
-  const handleCompactLayoutChange = useCallback((nextIsCompactLayout: boolean) => {
-    setIsCompactLayout(nextIsCompactLayout);
-    if (!nextIsCompactLayout) {
-      setIsMobileTopBarHidden(false);
-    }
-    setFileBrowserCollapsedState(prevCollapsed => {
-      if (nextIsCompactLayout) {
-        persistDesktopFileBrowserCollapsed(prevCollapsed);
-        return true;
-      }
 
-      return desktopFileBrowserCollapsed;
-    });
-  }, [desktopFileBrowserCollapsed, persistDesktopFileBrowserCollapsed]);
-
-  // Responsive mode: switch to chat-first layout on smaller screens
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const mq = window.matchMedia('(max-width: 900px)');
-    const onChange = (event: MediaQueryListEvent) => {
-      handleCompactLayoutChange(event.matches);
-    };
-
-    if (mq.addEventListener) {
-      mq.addEventListener('change', onChange);
-      return () => mq.removeEventListener('change', onChange);
-    }
-
-    // Safari fallback
-    mq.addListener(onChange);
-    return () => mq.removeListener(onChange);
-  }, [handleCompactLayoutChange]);
 
   const topLevelChats = useMemo(() => getTopLevelAgentSessions(sessions), [sessions]);
 
@@ -895,52 +427,7 @@ export default function App({ onLogout }: AppProps) {
     }
   }, [setPanelRatio]);
 
-  useEffect(() => {
-    if (chatVisibilityInitialized) return;
-    if (!currentSession) return;
-
-    try {
-      const raw = localStorage.getItem(CHAT_VISIBILITY_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          setVisibleChatKeys(new Set(parsed.filter((value): value is string => typeof value === 'string')));
-          setChatVisibilityInitialized(true);
-          return;
-        }
-      }
-    } catch {
-      // ignore storage parse failures and seed a fresh set below
-    }
-
-    setVisibleChatKeys(new Set([currentSession]));
-    setChatVisibilityInitialized(true);
-  }, [chatVisibilityInitialized, currentSession]);
-
-  useEffect(() => {
-    if (!chatVisibilityInitialized) return;
-    try {
-      localStorage.setItem(CHAT_VISIBILITY_STORAGE_KEY, JSON.stringify(Array.from(visibleChatKeys)));
-    } catch {
-      // ignore storage failures
-    }
-  }, [chatVisibilityInitialized, visibleChatKeys]);
-
-  useEffect(() => {
-    if (!chatVisibilityInitialized || !currentSession) return;
-    setVisibleChatKeys(prev => {
-      const isCurrentTopLevel = topLevelChats.some((session) => getSessionKey(session) === currentSession);
-      if (!isCurrentTopLevel || prev.has(currentSession)) return prev;
-      const next = new Set(prev);
-      next.add(currentSession);
-      return next;
-    });
-  }, [chatVisibilityInitialized, currentSession, topLevelChats]);
-
-  const visibleTopLevelChats = useMemo(() => {
-    if (!chatVisibilityInitialized) return [];
-    return topLevelChats.filter((session) => visibleChatKeys.has(getSessionKey(session)) || getSessionKey(session) === currentSession);
-  }, [chatVisibilityInitialized, currentSession, topLevelChats, visibleChatKeys]);
+  const { visibleTopLevelChats } = useChatVisibility(currentSession, topLevelChats);
 
   // Handlers for TTS provider/model changes
   const handleTtsProviderChange = useCallback((provider: TTSProvider) => {
@@ -963,68 +450,7 @@ export default function App({ onLogout }: AppProps) {
     setSttModel(model);
   }, [setSttModel]);
 
-  useEffect(() => {
-    if (!desktopRightPanelWidth || desktopRightPanelWidth <= 0) return;
-    if (toolPanelCollapsed) {
-      setToolPanelChatBaselineWidth(desktopRightPanelWidth);
-    }
-  }, [desktopRightPanelWidth, setToolPanelChatBaselineWidth, toolPanelCollapsed]);
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || !chatToolRegionRef.current) return;
-    const update = () => {
-      if (!chatToolRegionRef.current) return;
-      setChatToolRegionWidth(Math.round(chatToolRegionRef.current.getBoundingClientRect().width));
-    };
-    update();
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => update());
-    observer.observe(chatToolRegionRef.current);
-    return () => observer.disconnect();
-  }, [toolPanelCollapsed]);
-
-  useEffect(() => {
-    const measuredBaselineWidth = toolPanelCollapsed
-      ? desktopRightPanelWidth
-      : chatToolRegionWidth;
-    const baselineWidth = measuredBaselineWidth ?? toolPanelChatBaselineWidth ?? desktopRightPanelWidth;
-    if (!baselineWidth || baselineWidth <= 0) return;
-
-    const gapPx = toolPanelCollapsed ? 0 : 12;
-    const exactHalfWidth = Math.max(320, Math.round((baselineWidth - gapPx) / 2));
-
-    if (toolPanelWidth === null) {
-      setToolPanelWidth(exactHalfWidth);
-      return;
-    }
-
-    if (!toolPanelManualWidth && Math.abs(toolPanelWidth - exactHalfWidth) > 2) {
-      setToolPanelWidth(exactHalfWidth);
-    }
-  }, [chatToolRegionWidth, desktopRightPanelWidth, setToolPanelWidth, toolPanelChatBaselineWidth, toolPanelCollapsed, toolPanelManualWidth, toolPanelWidth]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const updateMetrics = () => {
-      const chatWidth = activeChatPaneRef.current ? Math.round(activeChatPaneRef.current.getBoundingClientRect().width) : null;
-      const toolWidth = activeToolPaneRef.current ? Math.round(activeToolPaneRef.current.getBoundingClientRect().width) : null;
-      setToolPanelDebugMetrics({
-        chatWidth,
-        toolWidth,
-        combinedWidth: chatWidth !== null && toolWidth !== null ? chatWidth + toolWidth : null,
-        baselineWidth: toolPanelChatBaselineWidth ?? desktopRightPanelWidth ?? null,
-      });
-    };
-
-    updateMetrics();
-
-    if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => updateMetrics());
-    if (activeChatPaneRef.current) observer.observe(activeChatPaneRef.current);
-    if (activeToolPaneRef.current) observer.observe(activeToolPaneRef.current);
-    return () => observer.disconnect();
-  }, [desktopRightPanelWidth, toolPanelChatBaselineWidth, toolPanelCollapsed, toolPanelWidth]);
 
   const visibleSaveToast = saveToast?.agentId === sharedWorkspaceAgentId
     && saveToast.workspaceVersion === workspaceVersion
@@ -1233,146 +659,25 @@ export default function App({ onLogout }: AppProps) {
       >
         Skip to chat
       </a>
-      {(voiceState === 'recording' || voiceState === 'transcribing') && voiceOriginSessionKey && (
-        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-center px-4">
-          <div className="pointer-events-auto flex w-full max-w-xl items-center gap-3 rounded-2xl border border-border/80 bg-card/95 px-4 py-3 text-sm text-foreground shadow-[0_22px_60px_rgba(0,0,0,0.34)] backdrop-blur-xl">
-            <span className={`inline-flex size-10 shrink-0 items-center justify-center rounded-2xl ${voiceState === 'recording' ? 'bg-red-500/12 text-red-400' : 'bg-primary/12 text-primary'}`}>
-              {voiceState === 'transcribing' ? <Loader2 size={18} className="animate-spin" aria-hidden="true" /> : <Mic size={18} aria-hidden="true" />}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-semibold tracking-[-0.02em]">
-                  {voiceState === 'recording' ? 'Recording in progress' : 'Transcribing voice note'}
-                </span>
-                {voiceElapsedMs > 0 && (
-                  <span className="rounded-full bg-background/70 px-2 py-0.5 font-mono text-[0.7rem] text-muted-foreground">
-                    {Math.floor(voiceElapsedMs / 60000).toString().padStart(2, '0')}:{Math.floor((voiceElapsedMs % 60000) / 1000).toString().padStart(2, '0')}
-                  </span>
-                )}
-              </div>
-              <p className="truncate text-xs text-muted-foreground">
-                {voiceState === 'recording'
-                  ? `This recording will be sent to ${voiceOriginSessionLabel || 'the chat where it started'}.`
-                  : `Finishing and delivering to ${voiceOriginSessionLabel || 'the originating chat'}.`}
-              </p>
-            </div>
-            {voiceState === 'recording' && (
-              <button
-                type="button"
-                onClick={() => { void discardRecording(); }}
-                className="cockpit-toolbar-button"
-              >
-                <Square size={14} aria-hidden="true" />
-                Discard
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => { void stopAndTranscribe(); }}
-              disabled={voiceState !== 'recording'}
-              className={`cockpit-toolbar-button ${voiceState !== 'recording' ? 'cursor-not-allowed opacity-50' : ''}`}
-            >
-              {voiceState === 'transcribing' ? <Loader2 size={14} className="animate-spin" aria-hidden="true" /> : <Mic size={14} aria-hidden="true" />}
-              {voiceState === 'recording' ? 'Stop + transcribe' : 'Transcribing…'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <ConnectDialog
-        open={dialogOpen && connectionState !== 'connected' && connectionState !== 'reconnecting'}
-        onConnect={handleConnect}
-        error={connectError}
-        defaultUrl={editableUrl}
-        defaultToken={editableToken}
-        officialUrl={officialUrl}
-        serverSideAuth={serverSideAuth}
+      <NotificationBanners
+        voiceState={voiceState}
+        voiceOriginSessionKey={voiceOriginSessionKey}
+        voiceOriginSessionLabel={voiceOriginSessionLabel}
+        voiceElapsedMs={voiceElapsedMs}
+        discardRecording={discardRecording}
+        stopAndTranscribe={stopAndTranscribe}
+        startupPending={startupPending}
+        connectionState={connectionState}
+        showManagedFallback={showManagedFallback}
+        dialogOpen={dialogOpen}
+        connectError={connectError}
+        handleReconnect={handleReconnect}
+        openManualConnect={openManualConnect}
+        reconnectAttempt={reconnectAttempt}
+        gatewayRestarting={gatewayRestarting}
+        gatewayRestartNotice={gatewayRestartNotice}
+        dismissNotice={dismissNotice}
       />
-
-      {startupPending && connectionState !== 'connected' && (
-        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-primary/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <PlugZap size={14} aria-hidden="true" />
-          </span>
-          <span className="min-w-0 text-left leading-5">Connecting to your workspace…</span>
-          <span className="size-2 rounded-full bg-primary animate-pulse" aria-hidden="true" />
-        </div>
-      )}
-
-      {showManagedFallback && connectionState === 'disconnected' && !dialogOpen && (
-        <div className="fixed left-1/2 top-12 z-50 flex w-[min(92vw,520px)] -translate-x-1/2 items-start gap-3 rounded-3xl border border-border/75 bg-card/96 px-4 py-4 text-sm text-foreground shadow-[0_24px_60px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:px-5">
-          <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-2xl bg-orange/10 text-orange">
-            <AlertTriangle size={16} aria-hidden="true" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold tracking-[-0.02em]">Couldn’t connect automatically.</p>
-            <p className="mt-1 text-xs leading-5 text-muted-foreground">
-              {connectError || 'Managed gateway connection failed. You can retry or open connection settings.'}
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => { void handleReconnect(); }}
-                className="cockpit-toolbar-button"
-              >
-                <RotateCw size={14} aria-hidden="true" />
-                Retry
-              </button>
-              <button
-                type="button"
-                onClick={openManualConnect}
-                className="cockpit-toolbar-button"
-              >
-                Connection settings
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/*
-       * Gateway state banners.
-       * Kept compact and centered so they read as transient shell notices instead of old alarm strips.
-       */}
-      {connectionState === 'reconnecting' && !gatewayRestarting && (
-        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-destructive/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-destructive/10 text-destructive">
-            <AlertTriangle size={14} aria-hidden="true" />
-          </span>
-          <span className="min-w-0 text-left leading-5">
-            Signal lost. Reconnecting{reconnectAttempt > 1 ? `, attempt ${reconnectAttempt}` : ''}.
-          </span>
-          <span className="size-2 rounded-full bg-destructive animate-pulse" aria-hidden="true" />
-        </div>
-      )}
-
-      {gatewayRestarting && (
-        <div className="fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 items-start gap-2 rounded-2xl border border-orange/25 bg-card/94 px-4 py-2 text-xs font-medium text-foreground shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl">
-          <span className="inline-flex size-7 items-center justify-center rounded-xl bg-orange/10 text-orange">
-            <RotateCw size={14} className="animate-spin" aria-hidden="true" />
-          </span>
-          <span className="min-w-0 text-left leading-5">Gateway restarting…</span>
-        </div>
-      )}
-
-      {!gatewayRestarting && gatewayRestartNotice && (
-        <button
-          type="button"
-          onClick={dismissNotice}
-          className={`fixed left-1/2 top-12 z-50 flex max-w-[calc(100vw-1.067rem)] -translate-x-1/2 cursor-pointer items-start gap-2 rounded-2xl border px-4 py-2 text-xs font-medium shadow-[0_20px_48px_rgba(0,0,0,0.28)] backdrop-blur-xl transition-transform hover:-translate-x-1/2 hover:-translate-y-px ${
-            gatewayRestartNotice.ok
-              ? 'border-green/25 bg-card/94 text-foreground'
-              : 'border-destructive/25 bg-card/94 text-foreground'
-          }`}
-        >
-          <span className={`inline-flex size-7 items-center justify-center rounded-xl ${
-            gatewayRestartNotice.ok ? 'bg-green/10 text-green' : 'bg-destructive/10 text-destructive'
-          }`}>
-            {gatewayRestartNotice.ok ? <CheckCircle2 size={14} aria-hidden="true" /> : <AlertTriangle size={14} aria-hidden="true" />}
-          </span>
-          <span className="min-w-0 text-left leading-5">{gatewayRestartNotice.message}</span>
-        </button>
-      )}
       
       {(!isCompactLayout || !isMobileTopBarHidden) && (
         <TopBar
@@ -1626,45 +931,30 @@ export default function App({ onLogout }: AppProps) {
         </Suspense>
       </PanelErrorBoundary>
 
-      {/* Reset Session Confirmation */}
-      <ConfirmDialog
-        open={showResetConfirm}
-        title="Reset Session"
-        message="This will start fresh and clear all context."
-        confirmLabel="Reset"
-        cancelLabel="Cancel"
-        onConfirm={confirmReset}
-        onCancel={cancelReset}
-        variant="danger"
-      />
-
-      {/* Gateway Restart Confirmation */}
-      <ConfirmDialog
-        open={showGatewayRestartConfirm}
-        title="Restart OpenClaw Gateway"
-        message="This will briefly interrupt gateway connectivity. Continue?"
-        confirmLabel="Restart"
-        cancelLabel="Cancel"
-        onConfirm={confirmGatewayRestart}
-        onCancel={cancelGatewayRestart}
-        variant="warning"
-      />
-
-      <WorkspaceSwitchDialog
-        open={pendingWorkspaceSwitch !== null}
-        targetLabel={pendingWorkspaceSwitch?.targetLabel || 'the other agent'}
-        pendingAction={workspaceSwitchAction}
-        error={workspaceSwitchError}
-        onSaveAndSwitch={handleSaveAndSwitch}
-        onDiscardAndSwitch={handleDiscardAndSwitch}
-        onCancel={handleCancelWorkspaceSwitch}
-      />
-
-      {/* Spawn Agent Dialog (from command palette) */}
-      <SpawnAgentDialog
-        open={spawnDialogOpen}
-        onOpenChange={setSpawnDialogOpen}
-        onSpawn={handleSpawnSession}
+      <AppDialogs
+        dialogOpen={dialogOpen}
+        connectionState={connectionState}
+        handleConnect={handleConnect}
+        connectError={connectError}
+        editableUrl={editableUrl}
+        editableToken={editableToken}
+        officialUrl={officialUrl}
+        serverSideAuth={serverSideAuth}
+        showResetConfirm={showResetConfirm}
+        confirmReset={confirmReset}
+        cancelReset={cancelReset}
+        showGatewayRestartConfirm={showGatewayRestartConfirm}
+        confirmGatewayRestart={confirmGatewayRestart}
+        cancelGatewayRestart={cancelGatewayRestart}
+        pendingWorkspaceSwitch={pendingWorkspaceSwitch}
+        workspaceSwitchAction={workspaceSwitchAction}
+        workspaceSwitchError={workspaceSwitchError}
+        handleSaveAndSwitch={handleSaveAndSwitch}
+        handleDiscardAndSwitch={handleDiscardAndSwitch}
+        handleCancelWorkspaceSwitch={handleCancelWorkspaceSwitch}
+        spawnDialogOpen={spawnDialogOpen}
+        setSpawnDialogOpen={setSpawnDialogOpen}
+        handleSpawnSession={handleSpawnSession}
       />
     </div>
   );
