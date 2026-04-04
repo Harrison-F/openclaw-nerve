@@ -14,8 +14,8 @@ export function PaperclipKanbanPanel() {
     try {
       const res = await fetch(`/api/kanban/tasks?boardId=${BOARD_ID}`);
       if (res.ok) {
-        const data = (await res.json()) as KanbanTask[];
-        setTasks(data);
+        const data = await res.json();
+        setTasks(Array.isArray(data) ? data : data.items ?? []);
       }
     } catch {
       // silent
