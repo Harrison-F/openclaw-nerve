@@ -214,11 +214,10 @@ export default function App({ onLogout }: AppProps) {
   const [chatSearchTarget, setChatSearchTarget] = useState<{ sessionKey: string; requestId: number; target: SearchMatchTarget } | null>(null);
 
   // View mode derived from URL path, persisted to localStorage
-  const isPaperclipRoute = location.pathname === '/paperclip';
-  const viewMode: ViewMode = location.pathname === '/kanban' ? 'kanban' : 'chat';
+  const viewMode: ViewMode = location.pathname === '/kanban' ? 'kanban' : location.pathname === '/paperclip' ? 'paperclip' : 'chat';
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const setViewMode = useCallback((mode: ViewMode) => {
-    const targetPath = mode === 'kanban' ? '/kanban' : '/';
+    const targetPath = mode === 'kanban' ? '/kanban' : mode === 'paperclip' ? '/paperclip' : '/';
     navigate(targetPath, { replace: true });
 
     if (mode === 'kanban' && isCompactLayout) {
@@ -230,8 +229,8 @@ export default function App({ onLogout }: AppProps) {
 
   // Sync localStorage when route changes
   useEffect(() => {
-    if (location.pathname === '/kanban' || location.pathname === '/') {
-      try { localStorage.setItem('nerve:viewMode', location.pathname === '/kanban' ? 'kanban' : 'chat'); } catch { /* ignore */ }
+    if (location.pathname === '/kanban' || location.pathname === '/paperclip' || location.pathname === '/') {
+      try { localStorage.setItem('nerve:viewMode', location.pathname === '/kanban' ? 'kanban' : location.pathname === '/paperclip' ? 'paperclip' : 'chat'); } catch { /* ignore */ }
     }
   }, [location.pathname]);
 
@@ -803,14 +802,14 @@ export default function App({ onLogout }: AppProps) {
          * in-progress voice recording / STT transcription survives tab switches.
          * See: https://github.com/.../issues/64
          */}
-        {viewMode === 'kanban' && !isPaperclipRoute && (
+        {viewMode === 'kanban' && (
           <div className="shell-panel boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden rounded-[28px]">
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
               <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} />
             </Suspense>
           </div>
         )}
-        {isPaperclipRoute && (
+        {viewMode === 'paperclip' && (
           <div className="shell-panel boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden rounded-[28px]">
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
               <PaperclipKanbanPanel />
@@ -818,11 +817,11 @@ export default function App({ onLogout }: AppProps) {
           </div>
         )}
         {isCompactLayout ? (
-          <div ref={activeChatPaneRef} className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' || isPaperclipRoute ? ' hidden' : ''}`}>
+          <div ref={activeChatPaneRef} className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode !== 'chat' ? ' hidden' : ''}`}>
             {chatContent}
           </div>
         ) : (
-          <div style={{ display: viewMode === 'kanban' || isPaperclipRoute ? 'none' : 'contents' }}>
+          <div style={{ display: viewMode !== 'chat' ? 'none' : 'contents' }}>
             <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden gap-3">
               {chatHistoryCollapsed ? (
                 <div style={{ width: `${CHAT_HISTORY_RAIL_WIDTH_PX}px` }} className="min-h-0 shrink-0">
