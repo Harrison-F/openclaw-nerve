@@ -10,7 +10,7 @@
  * 
  * Polling is now much slower, serving only as a safety net.
  */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { useGateway } from '@/contexts/GatewayContext';
 import { useServerEvents, type ServerEvent } from '@/hooks/useServerEvents';
 import type { Memory, TokenData, GatewayEvent } from '@/types';
@@ -101,7 +101,7 @@ export function useDashboardData(options: DashboardDataOptions = {}): DashboardD
   onFileChangedRef.current = options.onFileChanged;
   agentIdRef.current = activeAgentId;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setMemories([]);
     setMemoriesLoading(true);
   }, [activeAgentId]);

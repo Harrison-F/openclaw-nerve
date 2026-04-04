@@ -134,20 +134,17 @@ describe('useDashboardData', () => {
   it('drops old-agent file.changed events that arrive during the workspace switch render gap', async () => {
     const alphaOnFileChanged = vi.fn();
     const bravoOnFileChanged = vi.fn();
-    const tokens = deferred<FetchResponse>();
-    const alphaMemories = deferred<FetchResponse>();
-    const bravoMemories = deferred<FetchResponse>();
 
     globalThis.fetch = vi.fn((input: string | URL | Request) => {
       const url = String(input);
       if (url === '/api/tokens') {
-        return tokens.promise;
+        return Promise.resolve(jsonResponse({ totalTokens: 0 }));
       }
       if (url === '/api/memories?agentId=alpha') {
-        return alphaMemories.promise;
+        return Promise.resolve(jsonResponse([{ type: 'section', text: 'Alpha memory' }]));
       }
       if (url === '/api/memories?agentId=bravo') {
-        return bravoMemories.promise;
+        return Promise.resolve(jsonResponse([{ type: 'section', text: 'Bravo memory' }]));
       }
       if (url.startsWith('/api/workspace')) {
         return Promise.resolve(jsonResponse({ ok: true, files: [], remoteWorkspace: false }));
@@ -167,7 +164,7 @@ describe('useDashboardData', () => {
     alphaOnFileChanged.mockClear();
     bravoOnFileChanged.mockClear();
 
-    act(() => {
+    await act(async () => {
       rerender(createElement(DashboardDataRenderObserver, {
         agentId: 'bravo',
         onFileChanged: bravoOnFileChanged,
@@ -175,6 +172,7 @@ describe('useDashboardData', () => {
           sseHandler?.({ event: 'file.changed', data: { path: 'shared.md', agentId: 'alpha' }, ts: Date.now() });
         },
       }));
+      await Promise.resolve();
     });
 
     expect(alphaOnFileChanged).not.toHaveBeenCalled();
