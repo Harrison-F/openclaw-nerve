@@ -9,6 +9,7 @@ import type { KanbanTask } from '../lib/kanban-store.js';
 let tmpDir: string;
 
 type GatewayToolMock = (tool: string, args?: Record<string, unknown>) => Promise<unknown>;
+type GatewayRpcMock = (method: string, params?: Record<string, unknown>, timeoutMs?: number) => Promise<unknown>;
 
 beforeEach(async () => {
   vi.resetModules();
@@ -27,7 +28,7 @@ afterEach(async () => {
   await fs.promises.rm(tmpDir, { recursive: true, force: true });
 });
 
-async function buildApp(options: { invokeGatewayToolMock?: GatewayToolMock } = {}): Promise<Hono> {
+async function buildApp(options: { invokeGatewayToolMock?: GatewayToolMock; gatewayRpcMock?: GatewayRpcMock } = {}): Promise<Hono> {
   // Mock rate-limit to be a no-op for tests
   vi.doMock('../middleware/rate-limit.js', () => ({
     rateLimitGeneral: vi.fn((_c: unknown, next: () => Promise<void>) => next()),
@@ -39,6 +40,13 @@ async function buildApp(options: { invokeGatewayToolMock?: GatewayToolMock } = {
   // Mock gateway client so fire-and-forget spawn doesn't interfere with test cleanup
   vi.doMock('../lib/gateway-client.js', () => ({
     invokeGatewayTool: invokeGatewayToolMock,
+  }));
+
+  const gatewayRpcMock = options.gatewayRpcMock
+    ?? (vi.fn(() => Promise.resolve({})) as GatewayRpcMock);
+
+  vi.doMock('../lib/gateway-rpc.js', () => ({
+    gatewayRpcCall: gatewayRpcMock,
   }));
 
   // Create store from the re-imported module so instanceof checks work
@@ -1305,6 +1313,31 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
     expect(latest?.run?.status).toBe('running');
     expect(latest?.run?.sessionKey).toBe(task.run?.sessionKey);
     expect(latest?.result).toBeUndefined();
+  });
+
+  it('falls back to chat.send when sessions_spawn is unavailable', async () => {
+    const gatewayRpcMock = vi.fn(async () => ({ runId: 'run-ack' }));
+    const invokeGatewayToolMock = vi.fn(async (tool: string) => {
+      if (tool === 'sessions_spawn') {
+        throw new Error('Gateway tool invoke failed: 404 {"ok":false,"error":{"type":"not_found","message":"Tool not available: sessions_spawn"}}');
+      }
+      return {};
+    });
+
+    const app = await buildApp({ invokeGatewayToolMock, gatewayRpcMock });
+    const task = await createTask(app, { status: 'todo' });
+
+    const execRes = await app.request(`/api/kanban/tasks/${task.id}/execute`, json({}));
+    expect(execRes.status).toBe(200);
+    const running = await execRes.json() as KanbanTask;
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(gatewayRpcMock).toHaveBeenCalledWith('chat.send', expect.objectContaining({
+      sessionKey: running.run?.sessionKey,
+      message: expect.stringContaining(task.title),
+      idempotencyKey: expect.stringMatching(new RegExp(`^kanban-${task.id}-\\d+$`)),
+    }), 300_000);
   });
 
   it('completes a run even when the gateway truncates the human-readable label', async () => {

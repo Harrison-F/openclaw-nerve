@@ -913,11 +913,10 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
         };
       }
 
-      void gatewayRpcCall('agent', {
+      void gatewayRpcCall('chat.send', {
         sessionKey: runSessionKey,
         message: spawnArgs.task,
         idempotencyKey: `kanban-${id}-${Date.now()}`,
-        timeout: 300_000,
         ...(spawnArgs.model ? { model: spawnArgs.model as string } : {}),
         ...(spawnArgs.thinking ? { thinking: spawnArgs.thinking as string } : {}),
       }, 300_000)
