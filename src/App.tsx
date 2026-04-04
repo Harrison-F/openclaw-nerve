@@ -57,6 +57,7 @@ const CommandPalette = lazy(() => import('@/features/command-palette/CommandPale
 const SessionList = lazy(() => import('@/features/sessions/SessionList').then(m => ({ default: m.SessionList })));
 // Lazy-loaded view modes
 const KanbanPanel = lazy(() => import('@/features/kanban/KanbanPanel').then(m => ({ default: m.KanbanPanel })));
+const PaperclipKanbanPanel = lazy(() => import('@/features/kanban-paperclip/PaperclipKanbanPanel').then(m => ({ default: m.PaperclipKanbanPanel })));
 const MobileShell = lazy(() => import('@/mobile/MobileShell'));
 
 interface AppProps {
@@ -213,6 +214,7 @@ export default function App({ onLogout }: AppProps) {
   const [chatSearchTarget, setChatSearchTarget] = useState<{ sessionKey: string; requestId: number; target: SearchMatchTarget } | null>(null);
 
   // View mode derived from URL path, persisted to localStorage
+  const isPaperclipRoute = location.pathname === '/paperclip';
   const viewMode: ViewMode = location.pathname === '/kanban' ? 'kanban' : 'chat';
   const [pendingTaskId, setPendingTaskId] = useState<string | null>(null);
   const setViewMode = useCallback((mode: ViewMode) => {
@@ -801,19 +803,26 @@ export default function App({ onLogout }: AppProps) {
          * in-progress voice recording / STT transcription survives tab switches.
          * See: https://github.com/.../issues/64
          */}
-        {viewMode === 'kanban' && (
+        {viewMode === 'kanban' && !isPaperclipRoute && (
           <div className="shell-panel boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden rounded-[28px]">
             <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
               <KanbanPanel initialTaskId={pendingTaskId} onInitialTaskConsumed={() => setPendingTaskId(null)} />
             </Suspense>
           </div>
         )}
+        {isPaperclipRoute && (
+          <div className="shell-panel boot-panel flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden rounded-[28px]">
+            <Suspense fallback={<div className="flex-1 flex items-center justify-center text-muted-foreground text-xs bg-background">Loading…</div>}>
+              <PaperclipKanbanPanel />
+            </Suspense>
+          </div>
+        )}
         {isCompactLayout ? (
-          <div ref={activeChatPaneRef} className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' ? ' hidden' : ''}`}>
+          <div ref={activeChatPaneRef} className={`shell-panel flex-1 min-w-0 min-h-0 overflow-hidden rounded-[28px] boot-panel${viewMode === 'kanban' || isPaperclipRoute ? ' hidden' : ''}`}>
             {chatContent}
           </div>
         ) : (
-          <div style={{ display: viewMode === 'kanban' ? 'none' : 'contents' }}>
+          <div style={{ display: viewMode === 'kanban' || isPaperclipRoute ? 'none' : 'contents' }}>
             <div className="flex h-full min-h-0 min-w-0 flex-1 overflow-hidden gap-3">
               {chatHistoryCollapsed ? (
                 <div style={{ width: `${CHAT_HISTORY_RAIL_WIDTH_PX}px` }} className="min-h-0 shrink-0">
