@@ -872,29 +872,66 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     const thinking = task.thinking || config.defaultThinking;
     if (thinking) spawnArgs.thinking = thinking;
 
-    // Send message via gateway WebSocket RPC to start the agent working.
-    // The gateway creates sessions on-demand when a message is sent to a new key.
-    gatewayRpcCall('agent', {
-      sessionKey: runSessionKey,
-      message: spawnArgs.task,
-      ...(spawnArgs.model ? { model: spawnArgs.model as string } : {}),
-      ...(spawnArgs.thinking ? { thinking: spawnArgs.thinking as string } : {}),
-    }, 300_000)
-      .then(async () => {
-        // Agent has completed — move task to review
-        await store.attachRunIdentifiers(id, runSessionKey, {
-          childSessionKey: runSessionKey,
+    let pollIdentity: KanbanRunIdentity = {
+      correlationKey: runSessionKey,
+      childSessionKey: runSessionKey,
+    };
+
+    try {
+      const spawnRaw = await invokeGatewayTool('sessions_spawn', spawnArgs);
+      const spawn = parseGatewayResponse(spawnRaw);
+      const childSessionKey = typeof spawn.childSessionKey === 'string'
+        ? spawn.childSessionKey
+        : typeof spawn.sessionKey === 'string'
+          ? spawn.sessionKey
+          : typeof spawn.sessionId === 'string'
+            ? spawn.sessionId
+            : runSessionKey;
+      const runId = typeof spawn.runId === 'string' ? spawn.runId : undefined;
+
+      const linkedTask = await store.attachRunIdentifiers(id, runSessionKey, {
+        childSessionKey,
+        runId,
+      });
+      if (linkedTask?.run) {
+        pollIdentity = {
+          correlationKey: runSessionKey,
+          childSessionKey: linkedTask.run.childSessionKey ?? childSessionKey,
+          runId: linkedTask.run.runId ?? runId,
+        };
+      }
+    } catch (spawnErr) {
+      // Hermes does not expose sessions_spawn. Fall back to sending directly to
+      // the run session key and poll using the human-readable label.
+      const linkedTask = await store.attachRunIdentifiers(id, runSessionKey, {
+        childSessionKey: runSessionKey,
+      });
+      if (linkedTask?.run) {
+        pollIdentity = {
+          correlationKey: runSessionKey,
+          childSessionKey: linkedTask.run.childSessionKey ?? runSessionKey,
+        };
+      }
+
+      void gatewayRpcCall('agent', {
+        sessionKey: runSessionKey,
+        message: spawnArgs.task,
+        idempotencyKey: `kanban-${id}-${Date.now()}`,
+        timeout: 300_000,
+        ...(spawnArgs.model ? { model: spawnArgs.model as string } : {}),
+        ...(spawnArgs.thinking ? { thinking: spawnArgs.thinking as string } : {}),
+      }, 300_000)
+        .catch((err) => {
+          console.error(`[kanban] Failed to spawn session for task ${id}:`, err);
+          store.completeRun(id, runSessionKey, undefined, `Spawn failed: ${err.message}`).catch(() => {});
         });
 
-        pollSessionCompletion(store, id, {
-          correlationKey: runSessionKey,
-          childSessionKey: runSessionKey,
-        });
-      })
-      .catch((err) => {
-        console.error(`[kanban] Failed to spawn session for task ${id}:`, err);
-        store.completeRun(id, runSessionKey, undefined, `Spawn failed: ${err.message}`).catch(() => {});
-      });
+      if (spawnErr instanceof Error) {
+        console.warn(`[kanban] sessions_spawn unavailable for task ${id}, falling back to gateway RPC: ${spawnErr.message}`);
+      }
+    }
+
+    pollSessionCompletion(store, id, pollIdentity);
 
     return c.json(task);
   } catch (err) {
