@@ -23,6 +23,7 @@ import {
   ProposalAlreadyResolvedError,
 } from '../lib/kanban-store.js';
 import { invokeGatewayTool } from '../lib/gateway-client.js';
+import { gatewayRpcCall } from '../lib/gateway-rpc.js';
 import { parseKanbanMarkers, stripKanbanMarkers } from '../lib/parseMarkers.js';
 import type {
   TaskStatus,
@@ -871,33 +872,23 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
     const thinking = task.thinking || config.defaultThinking;
     if (thinking) spawnArgs.thinking = thinking;
 
-    invokeGatewayTool('sessions_spawn', spawnArgs)
-      .then(async (spawnRaw) => {
-        const spawn = parseGatewayResponse(spawnRaw);
-        const childSessionKey = typeof spawn.childSessionKey === 'string'
-          ? spawn.childSessionKey
-          : typeof spawn.sessionKey === 'string'
-            ? spawn.sessionKey
-            : typeof spawn.sessionId === 'string'
-              ? spawn.sessionId
-              : undefined;
-        const runId = typeof spawn.runId === 'string' ? spawn.runId : undefined;
-
-        const linkedTask = await store.attachRunIdentifiers(id, runSessionKey, {
-          childSessionKey,
-          runId,
+    // Send message via gateway WebSocket RPC to start the agent working.
+    // The gateway creates sessions on-demand when a message is sent to a new key.
+    gatewayRpcCall('agent', {
+      sessionKey: runSessionKey,
+      message: spawnArgs.task,
+      ...(spawnArgs.model ? { model: spawnArgs.model as string } : {}),
+      ...(spawnArgs.thinking ? { thinking: spawnArgs.thinking as string } : {}),
+    }, 300_000)
+      .then(async () => {
+        // Agent has completed — move task to review
+        await store.attachRunIdentifiers(id, runSessionKey, {
+          childSessionKey: runSessionKey,
         });
-        if (!linkedTask) {
-          console.warn(`[kanban] Spawned run metadata arrived after task ${id} moved on from run ${runSessionKey}`);
-          return;
-        }
 
-        // Poll for session completion in the background, preferring the stable
-        // spawned identifiers before falling back to the human-readable label.
         pollSessionCompletion(store, id, {
           correlationKey: runSessionKey,
-          childSessionKey: linkedTask.run?.childSessionKey ?? childSessionKey,
-          runId: linkedTask.run?.runId ?? runId,
+          childSessionKey: runSessionKey,
         });
       })
       .catch((err) => {
