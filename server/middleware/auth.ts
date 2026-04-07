@@ -17,6 +17,7 @@ const PUBLIC_ROUTES = [
   '/api/auth/login',
   '/api/auth/logout',
   '/api/auth/status',
+  '/api/connect-defaults',
   '/api/health',
   '/api/version',
   '/health',
