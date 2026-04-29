@@ -277,6 +277,19 @@ export function validateConfig(): void {
     );
   }
 
+  const hasHttpsCert = fs.existsSync(config.certPath);
+  const hasHttpsKey = fs.existsSync(config.keyPath);
+  if (!hasHttpsCert || !hasHttpsKey) {
+    const missingFiles = [
+      !hasHttpsCert ? path.basename(config.certPath) : null,
+      !hasHttpsKey ? path.basename(config.keyPath) : null,
+    ].filter(Boolean).join(', ');
+    console.warn(
+      `[config] ⚠ HTTPS disabled — missing ${missingFiles} in ${path.dirname(config.certPath)}\n` +
+      '         Secure-context features (microphone access, WSS over HTTPS) will be unavailable.',
+    );
+  }
+
   // STT validation
   if (config.sttProvider === 'local') {
     const modelFile = WHISPER_MODEL_FILES[config.whisperModel];

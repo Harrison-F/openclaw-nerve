@@ -123,6 +123,21 @@ describe('config module', () => {
       if (originalToken) process.env.GATEWAY_TOKEN = originalToken;
       if (originalOCToken) process.env.OPENCLAW_GATEWAY_TOKEN = originalOCToken;
     });
+
+    it('warns when HTTPS cert files are missing', async () => {
+      const { validateConfig } = await import('./config.js');
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      validateConfig();
+
+      const allWarns = warnSpy.mock.calls.map(c => c.join(' ')).join('\n');
+      expect(allWarns).toContain('HTTPS disabled');
+      expect(allWarns).toContain('Secure-context features');
+
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
   });
 
   describe('printStartupBanner', () => {
