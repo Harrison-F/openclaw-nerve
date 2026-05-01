@@ -18,6 +18,7 @@ import { cacheHeaders } from './middleware/cache-headers.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { securityHeaders } from './middleware/security-headers.js';
 import { authMiddleware } from './middleware/auth.js';
+import { normalizeApiPath } from './middleware/normalize-api-path.js';
 import { config } from './lib/config.js';
 import { resolveCorsOrigin } from './lib/origin-utils.js';
 
@@ -65,6 +66,7 @@ app.use(
   }),
 );
 app.use('*', securityHeaders);
+app.use('*', normalizeApiPath);
 app.use(
   '/api/*',
   bodyLimit({
