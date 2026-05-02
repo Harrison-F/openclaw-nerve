@@ -352,6 +352,7 @@ app.post('/api/crons/:id/run', rateLimitGeneral, async (c) => {
         task: String(payload.message || '').trim(),
         mode: 'run',
         label: buildCronSpawnLabel(job),
+        idempotencyKey: `cron-spawn-${id}-${runAtMs}`,
       };
       if (typeof payload.model === 'string' && payload.model.trim()) {
         spawnArgs.model = payload.model.trim();

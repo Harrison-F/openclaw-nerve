@@ -859,10 +859,12 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
       throw new Error(`executeTask did not produce a run session key for task ${id}`);
     }
 
+    const spawnIdempotencyKey = `kanban-spawn-${id}-${Date.now()}`;
     const spawnArgs: Record<string, unknown> = {
       task: `You are working on a Kanban task.\n\nTitle: ${task.title}\n\nDescription: ${taskDescription}\n\nDeliver your result as a clear summary of what was done.`,
       mode: 'run',
       label: runSessionKey,
+      idempotencyKey: spawnIdempotencyKey,
     };
     // Use task's model, or board default. If neither is set, omit — OpenClaw
     // will use whatever default model the operator configured in openclaw.json.

@@ -141,6 +141,7 @@ describe('cron routes', () => {
       task: 'say hello',
       mode: 'run',
       label: expect.stringMatching(/^Cron · test cron · \d{2}:\d{2}$/),
+      idempotencyKey: expect.stringMatching(/^cron-spawn-job-123-\d+$/),
       model: 'anthropic/claude-opus-4-6',
       thinking: 'medium',
       agentId: 'main',

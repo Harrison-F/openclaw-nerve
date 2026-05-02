@@ -1317,8 +1317,11 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
 
   it('falls back to chat.send when sessions_spawn is unavailable', async () => {
     const gatewayRpcMock = vi.fn(async () => ({ runId: 'run-ack' }));
-    const invokeGatewayToolMock = vi.fn(async (tool: string) => {
+    const invokeGatewayToolMock = vi.fn(async (tool: string, args?: Record<string, unknown>) => {
       if (tool === 'sessions_spawn') {
+        expect(args).toEqual(expect.objectContaining({
+          idempotencyKey: expect.stringMatching(new RegExp(`^kanban-spawn-${task.id}-\\d+$`)),
+        }));
         throw new Error('Gateway tool invoke failed: 404 {"ok":false,"error":{"type":"not_found","message":"Tool not available: sessions_spawn"}}');
       }
       return {};
