@@ -23,21 +23,27 @@ const PUBLIC_ROUTES = [
   '/health',
 ];
 
+function canonicalizePath(path: string): string {
+  return path.replace(/\/+$/, '') || '/';
+}
+
 /**
  * Authentication middleware.
  * When NERVE_AUTH is enabled, requires a valid signed session cookie
  * on all /api/* routes except public ones. Static files pass through.
  */
 export const authMiddleware = createMiddleware(async (c, next) => {
+  const path = canonicalizePath(c.req.path);
+
   // Auth disabled — pass through everything
   if (!config.auth) return next();
 
   // Non-API routes (static files, SPA) — pass through
   // The frontend login gate handles rendering the login page
-  if (!c.req.path.startsWith('/api/') && c.req.path !== '/health') return next();
+  if (!path.startsWith('/api/') && path !== '/health') return next();
 
   // Public API routes — always accessible
-  if (PUBLIC_ROUTES.some(route => c.req.path === route)) return next();
+  if (PUBLIC_ROUTES.some(route => path === route)) return next();
 
   // Check session cookie
   const token = getCookie(c, SESSION_COOKIE_NAME);

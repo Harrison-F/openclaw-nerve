@@ -20,6 +20,7 @@ vi.mock('../lib/session.js', () => {
 });
 
 import { authMiddleware } from './auth.js';
+import { normalizeApiPath } from './normalize-api-path.js';
 import { config } from '../lib/config.js';
 import { verifySession } from '../lib/session.js';
 
@@ -105,6 +106,7 @@ describe('authMiddleware', () => {
         '/api/auth/status',
         '/api/connect-defaults',
         '/api/health',
+        '/api/version',
         '/health',
       ];
 
@@ -128,6 +130,18 @@ describe('authMiddleware', () => {
         expect(protectedRes.status).toBe(401);
         const body = (await protectedRes.json()) as { error: string };
         expect(body.error).toBe('Authentication required');
+        expect(mockedVerifySession).not.toHaveBeenCalled();
+      });
+
+      it('does not auth-block trailing-slash public API routes before normalization redirects', async () => {
+        const app = new Hono();
+        app.use('*', normalizeApiPath);
+        app.use('*', authMiddleware);
+        app.get('/api/connect-defaults', (c) => c.json({ defaults: true }));
+
+        const res = await app.request('http://localhost/api/connect-defaults/?source=test');
+        expect(res.status).toBe(308);
+        expect(res.headers.get('location')).toBe('http://localhost/api/connect-defaults?source=test');
         expect(mockedVerifySession).not.toHaveBeenCalled();
       });
     });
