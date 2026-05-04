@@ -1339,7 +1339,7 @@ describe('POST /api/kanban/tasks/:id/complete — run key integrity', () => {
     expect(gatewayRpcMock).toHaveBeenCalledWith('chat.send', expect.objectContaining({
       sessionKey: running.run?.sessionKey,
       message: expect.stringContaining(task.title),
-      idempotencyKey: expect.stringMatching(new RegExp(`^kanban-${task.id}-\\d+$`)),
+      idempotencyKey: expect.stringMatching(new RegExp(`^kanban-fallback-${task.id}-`)),
     }), 300_000);
   });
 

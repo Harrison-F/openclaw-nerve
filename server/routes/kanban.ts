@@ -859,7 +859,7 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
       throw new Error(`executeTask did not produce a run session key for task ${id}`);
     }
 
-    const spawnIdempotencyKey = `kanban-spawn-${id}-${Date.now()}`;
+    const spawnIdempotencyKey = `kanban-spawn-${id}-${runSessionKey}`;
     const spawnArgs: Record<string, unknown> = {
       task: `You are working on a Kanban task.\n\nTitle: ${task.title}\n\nDescription: ${taskDescription}\n\nDeliver your result as a clear summary of what was done.`,
       mode: 'run',
@@ -918,7 +918,7 @@ app.post('/api/kanban/tasks/:id/execute', rateLimitGeneral, async (c) => {
       void gatewayRpcCall('chat.send', {
         sessionKey: runSessionKey,
         message: spawnArgs.task,
-        idempotencyKey: `kanban-${id}-${Date.now()}`,
+        idempotencyKey: `kanban-fallback-${id}-${runSessionKey}`,
         ...(spawnArgs.model ? { model: spawnArgs.model as string } : {}),
         ...(spawnArgs.thinking ? { thinking: spawnArgs.thinking as string } : {}),
       }, 300_000)
