@@ -63,6 +63,7 @@ const pending = new Map<string, PendingCall>();
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let connectPromise: Promise<void> | null = null;
 let connectResolve: (() => void) | null = null;
+let connectReject: ((err: Error) => void) | null = null;
 
 function buildConnectParams(nonce: string) {
   const clientId = 'openclaw-control-ui';
@@ -119,8 +120,9 @@ function ensureConnection(): void {
   if (!config.gatewayToken) return; // No token = can't connect
 
   connecting = true;
-  connectPromise = new Promise<void>((resolve) => {
+  connectPromise = new Promise<void>((resolve, reject) => {
     connectResolve = resolve;
+    connectReject = reject;
   });
   const wsUrl = getGatewayWsUrl();
 
@@ -156,10 +158,17 @@ function ensureConnection(): void {
           if (connectResolve) {
             connectResolve();
             connectResolve = null;
+            connectReject = null;
           }
           console.log('[gateway-rpc] Connected to gateway (persistent)');
         } else {
-          console.error('[gateway-rpc] Gateway connect rejected:', msg.error?.message);
+          const reason = msg.error?.message || 'Gateway connect rejected';
+          console.error('[gateway-rpc] Gateway connect rejected:', reason);
+          if (connectReject) {
+            connectReject(new Error(reason));
+            connectReject = null;
+            connectResolve = null;
+          }
           socket.close();
         }
         return;
@@ -194,6 +203,10 @@ function ensureConnection(): void {
     connected = false;
     connecting = false;
     connectPromise = null;
+    if (connectReject) {
+      connectReject(new Error('Gateway connection closed before ready'));
+      connectReject = null;
+    }
     connectResolve = null;
     rejectAllPending('Gateway connection closed');
 
