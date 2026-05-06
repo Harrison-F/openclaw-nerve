@@ -64,6 +64,15 @@ describe('GET /api/connect-defaults', () => {
     expect(json.wsUrl).toBe('wss://example.com:8443/ws');
   });
 
+  it('serves the same payload on the trailing-slash alias', async () => {
+    const app = await buildApp({ gatewayUrl: 'http://localhost:18789' });
+    const res = await app.request('/api/connect-defaults/');
+    expect(res.status).toBe(200);
+
+    const json = (await res.json()) as { wsUrl: string };
+    expect(json.wsUrl).toBe('ws://localhost:18789/ws');
+  });
+
   it('includes authEnabled reflecting server config', async () => {
     const app = await buildApp({ auth: true });
     const res = await app.request('/api/connect-defaults');

@@ -49,6 +49,17 @@ describe('GET /health and /api/health', () => {
     expect(json.gateway).toBe('ok');
   });
 
+  it('should also serve trailing-slash health endpoints', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ ok: true });
+
+    const app = await importHealthApp();
+    const apiRes = await app.request('/api/health/');
+    const rootRes = await app.request('/health/');
+
+    expect(apiRes.status).toBe(200);
+    expect(rootRes.status).toBe(200);
+  });
+
   it('should report gateway unreachable when fetch fails', async () => {
     globalThis.fetch = vi.fn().mockRejectedValue(new Error('ECONNREFUSED'));
 

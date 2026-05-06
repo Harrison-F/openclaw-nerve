@@ -23,6 +23,8 @@ async function healthResponse() {
 }
 
 app.get('/health', async (c) => c.json(await healthResponse()));
+app.get('/health/', async (c) => c.json(await healthResponse()));
 app.get('/api/health', async (c) => c.json(await healthResponse()));
+app.get('/api/health/', async (c) => c.json(await healthResponse()));
 
 export default app;

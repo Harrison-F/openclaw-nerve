@@ -35,9 +35,13 @@ function createTestApp(): Hono {
   app.get('/api/auth/logout', (c) => c.json({ logout: true }));
   app.get('/api/auth/status', (c) => c.json({ status: true }));
   app.get('/api/connect-defaults', (c) => c.json({ defaults: true }));
+  app.get('/api/connect-defaults/', (c) => c.json({ defaults: true }));
   app.get('/api/health', (c) => c.json({ health: true }));
+  app.get('/api/health/', (c) => c.json({ health: true }));
   app.get('/health', (c) => c.json({ health: true }));
+  app.get('/health/', (c) => c.json({ health: true }));
   app.get('/api/version', (c) => c.json({ version: '1.0' }));
+  app.get('/api/version/', (c) => c.json({ version: '1.0' }));
   app.get('/some/page', (c) => c.html('<h1>Page</h1>'));
   app.get('/assets/style.css', (c) => c.text('body{}'));
   return app;
@@ -105,9 +109,13 @@ describe('authMiddleware', () => {
         '/api/auth/logout',
         '/api/auth/status',
         '/api/connect-defaults',
+        '/api/connect-defaults/',
         '/api/health',
+        '/api/health/',
         '/api/version',
+        '/api/version/',
         '/health',
+        '/health/',
       ];
 
       for (const route of publicRoutes) {

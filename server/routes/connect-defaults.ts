@@ -10,7 +10,7 @@
  * by the WebSocket proxy for trusted clients (authenticated sessions or loopback).
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { config } from '../lib/config.js';
 import { rateLimitGeneral } from '../middleware/rate-limit.js';
 import { canInjectGatewayToken } from '../lib/trust-utils.js';
@@ -18,7 +18,7 @@ import { getConnInfo } from '@hono/node-server/conninfo';
 
 const app = new Hono();
 
-app.get('/api/connect-defaults', rateLimitGeneral, (c) => {
+const handleConnectDefaults = (c: Context) => {
   // Derive WebSocket URL from the HTTP gateway URL
   const gwUrl = config.gatewayUrl;
   let wsUrl = '';
@@ -48,6 +48,9 @@ app.get('/api/connect-defaults', rateLimitGeneral, (c) => {
       headers: c.req.header(),
     }),
   });
-});
+};
+
+app.get('/api/connect-defaults', rateLimitGeneral, handleConnectDefaults);
+app.get('/api/connect-defaults/', rateLimitGeneral, handleConnectDefaults);
 
 export default app;

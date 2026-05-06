@@ -18,9 +18,13 @@ const PUBLIC_ROUTES = [
   '/api/auth/logout',
   '/api/auth/status',
   '/api/connect-defaults',
+  '/api/connect-defaults/',
   '/api/health',
+  '/api/health/',
   '/api/version',
+  '/api/version/',
   '/health',
+  '/health/',
 ];
 
 function canonicalizePath(path: string): string {

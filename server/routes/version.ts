@@ -17,5 +17,6 @@ const pkg = JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'u
 const app = new Hono();
 
 app.get('/api/version', rateLimitGeneral, (c) => c.json({ version: pkg.version, name: pkg.name }));
+app.get('/api/version/', rateLimitGeneral, (c) => c.json({ version: pkg.version, name: pkg.name }));
 
 export default app;
