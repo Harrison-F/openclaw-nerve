@@ -1,7 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 
 function shouldNormalizePath(path: string): boolean {
-  return path.length > 1 && path.endsWith('/') && (path === '/health/' || path.startsWith('/api/'));
+  return path.length > 1 && path.endsWith('/') && path.startsWith('/api/') && path !== '/api/health/';
 }
 
 function trimTrailingSlash(path: string): string {

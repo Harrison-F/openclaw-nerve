@@ -3,10 +3,10 @@ import { Hono } from 'hono';
 import { normalizeApiPath, shouldNormalizePath, trimTrailingSlash } from './normalize-api-path.js';
 
 describe('normalizeApiPath', () => {
-  it('detects API and health paths with trailing slashes', () => {
+  it('detects trailing-slash API paths except the health endpoint aliases', () => {
     expect(shouldNormalizePath('/api/connect-defaults/')).toBe(true);
-    expect(shouldNormalizePath('/api/health/')).toBe(true);
-    expect(shouldNormalizePath('/health/')).toBe(true);
+    expect(shouldNormalizePath('/api/health/')).toBe(false);
+    expect(shouldNormalizePath('/health/')).toBe(false);
     expect(shouldNormalizePath('/api/connect-defaults')).toBe(false);
     expect(shouldNormalizePath('/settings/')).toBe(false);
   });

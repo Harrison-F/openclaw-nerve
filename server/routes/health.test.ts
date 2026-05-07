@@ -1,6 +1,7 @@
 /** Tests for the GET /health endpoint and its gateway probe. */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
+import { normalizeApiPath } from '../middleware/normalize-api-path.js';
 
 describe('GET /health and /api/health', () => {
   let originalFetch: typeof globalThis.fetch;
@@ -18,6 +19,7 @@ describe('GET /health and /api/health', () => {
   async function importHealthApp() {
     const mod = await import('./health.js');
     const app = new Hono();
+    app.use('*', normalizeApiPath);
     app.route('/', mod.default);
     return app;
   }
