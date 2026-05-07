@@ -1,6 +1,9 @@
 import { createMiddleware } from 'hono/factory';
 
+const DIRECT_TRAILING_SLASH_ALIASES = new Set(['/health/', '/api/connect-defaults/', '/api/health/', '/api/version/']);
+
 function shouldNormalizePath(path: string): boolean {
+  if (DIRECT_TRAILING_SLASH_ALIASES.has(path)) return false;
   return path.length > 1 && path.endsWith('/') && (path === '/health/' || path.startsWith('/api/'));
 }
 

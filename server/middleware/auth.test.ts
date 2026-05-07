@@ -141,15 +141,15 @@ describe('authMiddleware', () => {
         expect(mockedVerifySession).not.toHaveBeenCalled();
       });
 
-      it('does not auth-block trailing-slash public API routes before normalization redirects', async () => {
+      it('does not auth-block direct trailing-slash public API aliases', async () => {
         const app = new Hono();
         app.use('*', normalizeApiPath);
         app.use('*', authMiddleware);
-        app.get('/api/connect-defaults', (c) => c.json({ defaults: true }));
+        app.get('/api/connect-defaults/', (c) => c.json({ defaults: true }));
 
         const res = await app.request('http://localhost/api/connect-defaults/?source=test');
-        expect(res.status).toBe(308);
-        expect(res.headers.get('location')).toBe('http://localhost/api/connect-defaults?source=test');
+        expect(res.status).toBe(200);
+        expect(await res.json()).toEqual({ defaults: true });
         expect(mockedVerifySession).not.toHaveBeenCalled();
       });
     });
