@@ -11,6 +11,7 @@ export default defineConfig({
     exclude: [
       'node_modules/**',
       'server-dist/**',  // Exclude compiled server output (contains duplicate .test.js files)
+      '.overnight-bugfix-*/**',
     ],
     coverage: {
       provider: 'v8',
