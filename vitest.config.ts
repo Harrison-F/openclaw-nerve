@@ -1,13 +1,17 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react()],
+  root: ROOT_DIR,
   test: {
     globals: true,
     environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: [path.resolve(ROOT_DIR, 'src/test/setup.ts')],
     exclude: [
       'node_modules/**',
       'server-dist/**',  // Exclude compiled server output (contains duplicate .test.js files)
